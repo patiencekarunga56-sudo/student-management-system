@@ -1,0 +1,28 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class course extends Model
+{
+    protected $fillable = [
+        'name',
+        'description',
+        'lecturer_id',
+    ];
+    public function lecturer()
+{
+    return $this->belongsTo(User::class, 'lecturer_id');
+}
+
+public function registrations()
+{
+    return $this->hasMany(Registration::class);
+}
+
+public function students()
+{
+    return $this->belongsToMany(Student::class, 'registrations')->withTimestamps();
+}
+}
