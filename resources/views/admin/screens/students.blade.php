@@ -4,7 +4,7 @@
         <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
             <h2 class="text-xl font-extrabold text-mubs-navy">Student Course Registrations</h2>
-            <p class="text-xs text-mubs-textMuted">Eloquent Mapping (<code class="text-mubs-amber">belongsToMany</code>) with duplicate prevention guardrails (Question 1d & 4c)</p>
+      
           </div>
           <button onclick="openRegisterCourseModal()" class="bg-mubs-navy hover:bg-mubs-navyHover text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-md transition-all flex items-center space-x-2">
             <i class="fa-solid fa-link text-xs"></i>

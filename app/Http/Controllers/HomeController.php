@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\AddCourse; // 👈 Added this import
 
 class HomeController extends Controller
 {
@@ -14,28 +15,30 @@ class HomeController extends Controller
         return view('index');
     }
 
-   public function contact(){
+    public function contact()
+    {
+        return view('contact');
+    }
 
-return view('contact');
+    public function login()
+    {
+        return view('login');
+    }
 
-   }
+    public function dashboard()
+    {
+        // 👈 Fetch the courses from the database
+        $courses = AddCourse::latest()->get();
 
-   public function login(){
+        // 👈 Pass $courses to the student view
+        return view('student.dashboard', compact('courses'));
+    }
 
-    return view('login');
+    public function dashboards()
+    {
+        $messages = \App\Models\ContactRequest::latest()->get();
+        $messageCount = \App\Models\ContactRequest::count();
 
-       }
-
-       public function dashboard(){
-
-    return view('student.dashboard');
-
-       }
-
-         public function dashboards(){
-
-    return view('admin.dashboard');
-
-       }
-  
+        return view('admin.dashboard', compact('messages', 'messageCount')); 
+    }
 }

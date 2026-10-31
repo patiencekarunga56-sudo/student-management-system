@@ -68,7 +68,6 @@
 
     <!-- QUICK CONTACT STAT CARDS -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-      
       <!-- Card 1: Campus -->
       <div class="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-lg flex items-start space-x-4 hover:border-mubs-amber/50 transition-all">
         <div class="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-mubs-amber text-xl shrink-0">
@@ -110,75 +109,91 @@
           </p>
         </div>
       </div>
-
     </div>
 
-    <!-- MAIN FORM & MAP SECTION -->
+    <!-- FORM + FAQ CARD -->
     <div class="bg-white rounded-3xl border border-gray-200/80 shadow-2xl p-6 sm:p-10">
-      
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
-        <!-- Contact Form (7 cols) -->
+
+        <!-- FORM COLUMN -->
         <div class="lg:col-span-7 space-y-6">
           <div class="space-y-1">
             <h2 class="text-xl font-extrabold text-mubs-navy">Send an Inquiry</h2>
             <p class="text-xs text-mubs-textMuted">Submit your issue below and our portal administrator will email you back.</p>
           </div>
 
-          <form onsubmit="handleContactSubmit(event)" class="space-y-4">
-            
+          @if (session('success'))
+            <div class="p-3 text-sm text-green-700 bg-green-50 rounded-xl border border-green-200">
+              {{ session('success') }}
+            </div>
+          @endif
+
+          @if ($errors->any())
+            <div class="p-3 text-sm text-red-700 bg-red-50 rounded-xl border border-red-200">
+              <ul class="list-disc list-inside space-y-0.5">
+                @foreach ($errors->all() as $error)
+                  <li>{{ $error }}</li>
+                @endforeach
+              </ul>
+            </div>
+          @endif
+
+          <form id="contactForm" method="POST" action="{{ route('contact.submit') }}" class="space-y-4">
+            @csrf
+
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label class="block text-xs font-bold text-mubs-navy uppercase tracking-wider mb-1.5">Full Name</label>
-                <input type="text" required placeholder="e.g. Sarah Namata" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mubs-amber focus:bg-white transition-all font-medium text-mubs-navy">
+                <input type="text" name="full_name" value="{{ old('full_name') }}" required placeholder="e.g. Sarah Namata"
+                  class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mubs-amber focus:bg-white transition-all font-medium text-mubs-navy">
               </div>
-
               <div>
                 <label class="block text-xs font-bold text-mubs-navy uppercase tracking-wider mb-1.5">Email Address</label>
-                <input type="email" required placeholder="e.g. sarah@gmail.com" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mubs-amber focus:bg-white transition-all font-medium text-mubs-navy">
+                <input type="email" name="email" value="{{ old('email') }}" required placeholder="e.g. sarah@gmail.com"
+                  class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mubs-amber focus:bg-white transition-all font-medium text-mubs-navy">
               </div>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label class="block text-xs font-bold text-mubs-navy uppercase tracking-wider mb-1.5">Student / Staff Reg No.</label>
-                <input type="text" placeholder="e.g. 2400724428" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mubs-amber focus:bg-white transition-all font-medium text-mubs-navy">
+                <input type="text" name="reg_no" value="{{ old('reg_no') }}" required placeholder="e.g. 2400724428"
+                  class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mubs-amber focus:bg-white transition-all font-medium text-mubs-navy">
               </div>
-
               <div>
                 <label class="block text-xs font-bold text-mubs-navy uppercase tracking-wider mb-1.5">Department / Inquiry Type</label>
-                <select class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mubs-amber focus:bg-white transition-all font-medium text-mubs-navy appearance-none">
-                  <option value="portal">Portal Login / Authentication Issue</option>
-                  <option value="registrar">Academic Registrar & Transcripts</option>
-                  <option value="bursar">Bursar & Tuition Clearance</option>
-                  <option value="computing">Faculty of Computing & Informatics</option>
+                <select name="department" required
+                  class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mubs-amber focus:bg-white transition-all font-medium text-mubs-navy appearance-none">
+                  <option value="" disabled {{ old('department') ? '' : 'selected' }}>Select an option</option>
+                  <option value="Portal Login / Authentication Issue" {{ old('department') === 'Portal Login / Authentication Issue' ? 'selected' : '' }}>Portal Login / Authentication Issue</option>
+                  <option value="Academic Registrar & Transcripts" {{ old('department') === 'Academic Registrar & Transcripts' ? 'selected' : '' }}>Academic Registrar & Transcripts</option>
+                  <option value="Bursar & Tuition Clearance" {{ old('department') === 'Bursar & Tuition Clearance' ? 'selected' : '' }}>Bursar & Tuition Clearance</option>
+                  <option value="Faculty of Computing & Informatics" {{ old('department') === 'Faculty of Computing & Informatics' ? 'selected' : '' }}>Faculty of Computing & Informatics</option>
                 </select>
               </div>
             </div>
 
             <div>
               <label class="block text-xs font-bold text-mubs-navy uppercase tracking-wider mb-1.5">Subject</label>
-              <input type="text" required placeholder="What do you need assistance with?" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mubs-amber focus:bg-white transition-all font-medium text-mubs-navy">
+              <input type="text" name="subject" value="{{ old('subject') }}" required placeholder="What do you need assistance with?"
+                class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mubs-amber focus:bg-white transition-all font-medium text-mubs-navy">
             </div>
 
             <div>
               <label class="block text-xs font-bold text-mubs-navy uppercase tracking-wider mb-1.5">Your Message</label>
-              <textarea rows="4" required placeholder="Provide clear details about your query..." class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mubs-amber focus:bg-white transition-all font-medium text-mubs-navy"></textarea>
+              <textarea name="message" rows="4" required placeholder="Provide clear details about your query..."
+                class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-mubs-amber focus:bg-white transition-all font-medium text-mubs-navy">{{ old('message') }}</textarea>
             </div>
 
-            <button 
-              type="submit" 
-              id="contactBtn" 
-              class="w-full bg-mubs-amber hover:bg-mubs-amberHover text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-amber-900/10 transition-all flex items-center justify-center space-x-2 text-base active:scale-[0.99]"
-            >
+            <button type="submit"
+              class="w-full bg-mubs-amber hover:bg-mubs-amberHover text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-amber-900/10 transition-all flex items-center justify-center space-x-2 text-base active:scale-[0.99]">
               <span>Submit Request</span>
               <i class="fa-solid fa-arrow-right text-xs"></i>
             </button>
-
           </form>
         </div>
 
-        <!-- Sidebar / FAQs Badge (5 cols) -->
+        <!-- SIDEBAR / FAQ COLUMN -->
         <div class="lg:col-span-5 bg-mubs-navy text-white rounded-2xl p-6 sm:p-8 space-y-6 relative overflow-hidden">
           <div class="absolute -right-12 -bottom-12 w-48 h-48 bg-mubs-amber/20 rounded-full blur-3xl"></div>
 
@@ -208,11 +223,9 @@
             <span class="text-xs text-gray-300">Emergency Support Line:</span>
             <span class="text-xs font-bold text-mubs-amber">+256 761 448094</span>
           </div>
-
         </div>
 
       </div>
-
     </div>
 
   </main>
@@ -231,32 +244,10 @@
     </button>
   </div>
 
-
-
   @include('includes.footer')
 
-
-
-
-
-
-
   <script>
-    function handleContactSubmit(e) {
-      e.preventDefault();
-      const btn = document.getElementById('contactBtn');
-      btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i><span>Sending Request...</span>`;
-      btn.disabled = true;
-
-      setTimeout(() => {
-        btn.innerHTML = `<span>Submit Request</span><i class="fa-solid fa-arrow-right text-xs"></i>`;
-        btn.disabled = false;
-        e.target.reset();
-
-        showToast('Your inquiry has been submitted! MUBS Support will reply via email.', 'success', 'Request Sent');
-      }, 1200);
-    }
-
+    // ---- Toast helpers ----
     let toastTimeout;
     function showToast(message, type = 'success', title = 'Notice') {
       const toast = document.getElementById('toast');
@@ -267,8 +258,8 @@
       toastTitle.textContent = title;
       toastMessage.textContent = message;
 
-      toastIcon.innerHTML = type === 'success' 
-        ? `<i class="fa-solid fa-circle-check text-emerald-400"></i>` 
+      toastIcon.innerHTML = type === 'success'
+        ? `<i class="fa-solid fa-circle-check text-emerald-400"></i>`
         : `<i class="fa-solid fa-circle-info text-mubs-amber"></i>`;
 
       toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
@@ -281,6 +272,30 @@
       const toast = document.getElementById('toast');
       toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
     }
+
+    // ---- Show toast on redirect success (from session flash) ----
+    @if (session('success'))
+      document.addEventListener('DOMContentLoaded', () => {
+        showToast(@json(session('success')), 'success', 'Request Sent');
+      });
+    @endif
+
+    // ---- Safe double-submit guard (does NOT prevent the real POST) ----
+    document.addEventListener('DOMContentLoaded', () => {
+      const form = document.getElementById('contactForm');
+      if (!form) return;
+
+      form.addEventListener('submit', () => {
+        // Let the browser validate first (HTML5 required attributes)
+        if (!form.checkValidity()) return;
+
+        const btn = form.querySelector('button[type="submit"]');
+        if (btn) {
+          btn.disabled = true;
+          btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin mr-2"></i><span>Sending...</span>';
+        }
+      });
+    });
   </script>
 </body>
 </html>
