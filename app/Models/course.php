@@ -2,27 +2,30 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class course extends Model
+class Course extends Model
 {
-    protected $fillable = [
-        'name',
-        'description',
-        'lecturer_id',
-    ];
+    use HasFactory;
+
+    protected $fillable = ['name', 'code', 'lecturer_id'];
+
+    // A course belongs to a lecturer
     public function lecturer()
-{
-    return $this->belongsTo(User::class, 'lecturer_id');
-}
+    {
+        return $this->belongsTo(User::class, 'lecturer_id');
+    }
 
-public function registrations()
-{
-    return $this->hasMany(Registration::class);
-}
+    // A course has many registrations
+    public function registrations()
+    {
+        return $this->hasMany(Registration::class);
+    }
 
-public function students()
-{
-    return $this->belongsToMany(Student::class, 'registrations')->withTimestamps();
-}
+    // A course belongs to many students through registrations
+    public function students()
+    {
+        return $this->belongsToMany(User::class, 'registrations');
+    }
 }
