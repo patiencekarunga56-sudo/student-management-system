@@ -2,25 +2,23 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class registration extends Model
+class Registration extends Model
 {
-    protected $fillable = [
-        'full_name',
-        'email',
-        'role',
-        'password',
-        'confirm_password',
-    ];
-    public function student()
-{
+    use HasFactory;
 
-    return $this->belongsTo(Student::class);
-}
+    // This allows Laravel to save data into these columns
+    protected $fillable = ['user_id', 'course_id'];
 
-public function course()
-{
-    return $this->belongsTo(Course::class);
-}
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function course()
+    {
+        return $this->belongsTo(Course::class);
+    }
 }

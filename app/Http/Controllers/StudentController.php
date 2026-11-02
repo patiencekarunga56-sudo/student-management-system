@@ -2,98 +2,71 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\student;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-class StudentController extends Controller
+class StudentController extends Controller implements HasMiddleware
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function student()
+    public static function middleware(): array
     {
-        $students = student::all();
-         return view('student', compact('students'));
-    }
-public function index()
-    {
-        return view('index');
+        return [
+            new Middleware('auth'),
+            new Middleware('role:Administrator'),
+        ];
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
+    public function index()
+    {
+        $students = User::where('role', 'Student')->get();
+        return view('students.index', compact('students'));
+    }
+
     public function create()
     {
-        return view('student');
-    }
-     
-    public function logout()
-    {
-        return view('logout');
+        return view('students.create');
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
-         $validated = $request->validate([
-        'name'                => 'required|string|max:255',
-        'email'               => 'required|email|unique:users,email',
-        'student_number'      => 'required|string|unique:students,student_number',
-        'registration_number' => 'required|string|unique:students,registration_number',
-    ]);
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users',
+            'password' => 'required|min:8',
+        ]);
 
-    // Create User Account
-    $user = User::create([
-        'name'     => $validated['name'],
-        'email'    => $validated['email'],
-        'password' => bcrypt('Password123'),
-    ]);
-    $user->assignRole('Student');
+        User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'role' => 'Student',
+        ]);
 
-    // Create Student Record
-    Student::create([
-        'user_id'             => $user->id,
-        'student_number'      => $validated['student_number'],
-        'registration_number' => $validated['registration_number'],
-    ]);
-
-    return redirect()->route('students.index')->with('success', 'Student created successfully.');
-}
-    
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(student $student)
-    {
-        //
+        return redirect()->route('students.index')->with('success', 'Student created successfully.');
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(student $student)
+    public function edit(User $student)
     {
-        //
+        return view('students.edit', compact('student'));
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, student $student)
+    public function update(Request $request, User $student)
     {
-        //
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email,' . $student->id,
+        ]);
+
+        $student->update($request->only('name', 'email'));
+
+        return redirect()->route('students.index')->with('success', 'Student updated successfully.');
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(student $student)
+    public function destroy(User $student)
     {
         $student->delete();
-        return redirect()->back();
+        return redirect()->route('students.index')->with('success', 'Student deleted successfully.');
     }
 }
