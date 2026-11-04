@@ -111,7 +111,7 @@
     </main>
 
     <footer class="bg-white border-t border-coffee-200 py-5 text-center text-sm text-coffee-500">
-        &copy; {{ date('Y') }} Student Management System · All rights reserved
+        &copy; {{ date('Y') }} Student Management System · All rights reserved.
     </footer>
 
 </body>
