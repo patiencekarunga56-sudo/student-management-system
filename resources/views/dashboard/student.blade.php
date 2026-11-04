@@ -37,7 +37,7 @@
                 </div>
                 <div>
                     <h2 class="text-lg font-bold text-brand-800 group-hover:text-gold-600 transition-colors">My Registrations</h2>
-                    <p class="text-sm text-slate-500 mt-1">Check which courses you are currently enrolled in, or drop a course.</p>
+                    <p class="text-sm text-slate-500 mt-1">Check which courses  you are currently enrolled in, or drop a course.</p>
                 </div>
             </div>
         </a>
