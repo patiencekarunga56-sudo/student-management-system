@@ -71,7 +71,7 @@ Route::delete('/students/{student}', [StudentController::class, 'destroy'])->nam
 
 
 
-// Admin - Courses (Added 'approved' middleware)
+// Admin - Courses (Added 'approveddd  middleware)
 Route::get('/courses/create', [CourseController::class, 'create'])->name('courses.create')->middleware(['auth', 'approved', 'role:Administrator']);
 Route::post('/courses', [CourseController::class, 'store'])->name('courses.store')->middleware(['auth', 'approved', 'role:Administrator']);
 Route::get('/courses/{course}/edit', [CourseController::class, 'edit'])->name('courses.edit')->middleware(['auth', 'approved', 'role:Administrator']);
