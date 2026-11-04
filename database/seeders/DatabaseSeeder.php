@@ -102,7 +102,7 @@ class DatabaseSeeder extends Seeder
             'code' => 'BSE3102',
         ]);
 
-        // 5. Seed Course Registrations
+        // 5. Seeding Course Registrations
         // Register all 5 students for Course 1
         foreach ($students as $student) {
             Registration::create([
@@ -111,7 +111,7 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-        // Register the first 3 students for Course 2
+        // Registering the first 3 students for Course 2
         for ($i = 0; $i < 3; $i++) {
             Registration::create([
                 'user_id' => $students[$i]->id,
