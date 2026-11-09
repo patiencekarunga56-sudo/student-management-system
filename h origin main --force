@@ -1,0 +1,19 @@
+[33m6eb98fb[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/pr/22[m[33m)[m Fix migrations, add role seeding and approval columns
+[33md5d1479[m Merge branch 'patience' of https://github.com/patiencekarunga56-sudo/student-management-system into patience
+[33m2bf962e[m Fix migrations, add role seeding and approval columns, ui too
+[33m57ec809[m[33m ([m[1;31morigin/pr/19[m[33m)[m fixed the routes ,and page displaing on the web
+[33m68f1826[m[33m ([m[1;31morigin/pr/12[m[33m)[m Initial commit: Laravel student management system with approval flow
+[33m7ecc76b[m Restore team commit history and merge with completed project structure
+[33m9887116[m added front end pages, logo, and routing the pages
+[33mb12e728[m Deleted project files from repository
+[33mbc88348[m Remove all files from main
+[33m170078e[m Wipe and empty repository completely
+[33m477afae[m system update
+[33md68503e[m added front end pages, logo, and routing the pages
+[33m48e64d2[m Initial commit
+[33m5ee62b1[m system update
+[33m8d1eba2[m Deleted project files from Macarthy branch
+[33m89f4266[m Deleted project files from repository
+[33mdeb198e[m Remove all files from main
+[33mc7e6cbf[m Wipe and empty repository completely
+[33mb028ff1[m updated ui and routed necessary pagese
