@@ -1,0 +1,3006 @@
+﻿
+===== C:\Users\HP\Desktop\student-management-system-main\app\Models\Course.php =====
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Course extends Model
+{
+    use HasFactory;
+
+    protected $fillable = ['name', 'code', 'lecturer_id'];
+
+    // A course belongs to a lecturer
+    public function lecturer()
+    {
+        return $this->belongsTo(User::class, 'lecturer_id');
+    }
+
+    // A course has many registrations
+    public function registrations()
+    {
+        return $this->hasMany(Registration::class);
+    }
+
+    // A course belongs to many students through registrations
+    public function students()
+    {
+        return $this->belongsToMany(User::class, 'registrations')->withTimestamps();
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\app\Models\Registration.php =====
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Registration extends Model
+{
+    use HasFactory;
+
+    // This allows Laravel to save data into these columns
+    protected $fillable = ['user_id', 'course_id'];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function course()
+    {
+        return $this->belongsTo(Course::class);
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\app\Models\User.php =====
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Spatie\Permission\Traits\HasRoles; // <-- Added Spatie Trait
+
+class User extends Authenticatable
+{
+    use HasFactory, HasRoles, Notifiable; // <-- Added HasRoles here
+
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+        'role',
+        'is_approved',
+        'approved_at',
+    ];
+
+    protected $casts = [
+        'is_approved' => 'boolean',
+        'approved_at' => 'datetime',
+        'email_verified_at' => 'datetime',
+    ];
+
+    // A student has many course registrations
+    public function registrations()
+    {
+        return $this->hasMany(Registration::class);
+    }
+
+    // A student is registered to many courses
+    public function courses()
+    {
+        return $this->belongsToMany(Course::class, 'registrations')->withTimestamps();
+    }
+
+    // A lecturer is assigned many courses
+    public function assignedCourses()
+    {
+        return $this->hasMany(Course::class, 'lecturer_id');
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\app\Http\Controllers\AuthController.php =====
+
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+
+class AuthController extends \Illuminate\Routing\Controller
+{
+    public function showLogin()
+    {
+        return view('auth.login');
+    }
+
+    public function login(Request $request)
+    {
+        $credentials = $request->validate([
+            'email' => 'required|email',
+            'password' => 'required'
+        ]);
+
+        if (Auth::attempt($credentials)) {
+            $request->session()->regenerate();
+
+            $user = Auth::user();
+
+            // Lecturer / Administrator must be approved before entering dashboard
+            if (in_array($user->role, ['Lecturer', 'Administrator']) && ! $user->is_approved) {
+                return redirect()->route('pending.approval');
+            }
+
+            return redirect()->intended('dashboard');
+        }
+
+        return back()->withErrors(['email' => 'Invalid credentials'])->onlyInput('email');
+    }
+
+    public function showRegister()
+    {
+        return view('auth.register');
+    }
+
+    public function register(Request $request)
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users',
+            'password' => 'required|string|min:8|confirmed',
+            'role' => 'required|in:Student,Lecturer,Administrator',
+        ]);
+
+        $isStudent = $data['role'] === 'Student';
+
+        $user = User::create([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'password' => Hash::make($data['password']),
+            'role' => $data['role'],
+            'is_approved' => $isStudent,
+            'approved_at' => $isStudent ? now() : null,
+        ]);
+
+        // Assign Spatie role so role:Lecturer / role:Administrator middleware works
+        $user->assignRole($data['role']);
+
+        Auth::login($user);
+        $request->session()->regenerate();
+
+        // Students go straight to dashboard; Lecturer/Admin wait for approval
+        if ($isStudent) {
+            return redirect()->route('dashboard');
+        }
+
+        return redirect()->route('pending.approval');
+    }
+
+    public function logout(Request $request)
+    {
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        return redirect('/');
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\app\Http\Controllers\Controller.php =====
+
+<?php
+
+namespace App\Http\Controllers;
+
+abstract class Controller
+{
+    //
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\app\Http\Controllers\CourseController.php =====
+
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Course;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
+
+class CourseController extends Controller implements HasMiddleware
+{
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('auth'),
+            new Middleware('permission:manage courses', except: ['index', 'show']),
+        ];
+    }
+
+    public function index()
+    {
+        $coursesQuery = Course::with('lecturer');
+
+        if (auth()->user()->hasRole('Lecturer')) {
+            $coursesQuery->where('lecturer_id', auth()->id());
+        }
+
+        $courses = $coursesQuery->get();
+
+        return view('courses.index', compact('courses'));
+    }
+
+    public function create()
+    {
+        $lecturers = User::where('role', 'Lecturer')->get();
+
+        return view('courses.create', compact('lecturers'));
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'code' => 'required|string|unique:courses',
+            'lecturer_id' => 'nullable|exists:users,id',
+        ]);
+
+        Course::create($request->all());
+
+        return redirect()->route('courses.index')->with('success', 'Course created successfully.');
+    }
+
+    public function show(Course $course)
+    {
+        $user = auth()->user();
+        $isAssignedLecturer = $user->hasRole('Lecturer')
+            && (int) $course->lecturer_id === (int) $user->getKey();
+
+        if ($user->hasRole('Lecturer') && ! $isAssignedLecturer) {
+            abort(403, 'You can only view rosters for your assigned courses.');
+        }
+
+        $canViewRoster = $user->hasRole('Administrator') || $isAssignedLecturer;
+
+        $course->load('lecturer');
+
+        if ($canViewRoster) {
+            $course->load('students');
+        }
+
+        return view('courses.show', compact('course', 'canViewRoster'));
+    }
+
+    public function edit(Course $course)
+    {
+        $lecturers = User::where('role', 'Lecturer')->get();
+
+        return view('courses.edit', compact('course', 'lecturers'));
+    }
+
+    public function update(Request $request, Course $course)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'code' => 'required|string|unique:courses,code,'.$course->id,
+            'lecturer_id' => 'nullable|exists:users,id',
+        ]);
+
+        $course->update($request->all());
+
+        return redirect()->route('courses.index')->with('success', 'Course updated successfully.');
+    }
+
+    public function destroy(Course $course)
+    {
+        $course->delete();
+
+        return redirect()->route('courses.index')->with('success', 'Course deleted successfully.');
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\app\Http\Controllers\DashboardController.php =====
+
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
+
+class DashboardController extends Controller implements HasMiddleware
+{
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('auth'),
+        ];
+    }
+
+    public function index()
+    {
+        $user = Auth::user();
+
+        if ($user->role === 'Administrator') {
+            return view('dashboard.admin');
+        } elseif ($user->role === 'Lecturer') {
+            return redirect()->route('lecturer.dashboard');
+        }
+
+        return view('dashboard.student');
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\app\Http\Controllers\LecturerController.php =====
+
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Course;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
+
+class LecturerController extends Controller implements HasMiddleware
+{
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('auth'),
+            new Middleware('role:Lecturer'),
+        ];
+    }
+
+    public function index()
+    {
+        $courses = Course::where('lecturer_id', Auth::id())->with('students')->get();
+        return view('lecturer.dashboard', compact('courses'));
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\app\Http\Controllers\RegistrationController.php =====
+
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Course;
+use App\Models\Registration;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
+
+class RegistrationController extends Controller implements HasMiddleware
+{
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('auth'),
+        ];
+    }
+
+    public function index()
+    {
+        $canManageRegistrations = Auth::user()->can('manage registrations');
+
+        $registrations = $canManageRegistrations
+            ? Registration::with(['user', 'course'])->latest()->get()
+            : Auth::user()->registrations()->with('course')->latest()->get();
+
+        return view('registrations.index', compact('registrations', 'canManageRegistrations'));
+    }
+
+    public function create()
+    {
+        $canManageRegistrations = Auth::user()->can('manage registrations');
+        $registeredCourseIds = $canManageRegistrations
+            ? collect()
+            : Auth::user()->registrations()->pluck('course_id');
+        $courses = Course::whereNotIn('id', $registeredCourseIds)->orderBy('name')->get();
+        $students = $canManageRegistrations
+            ? User::where('role', 'Student')->orderBy('name')->get()
+            : collect();
+
+        return view('registrations.create', compact('courses', 'students', 'canManageRegistrations'));
+    }
+
+    public function store(Request $request)
+    {
+        $canManageRegistrations = Auth::user()->can('manage registrations');
+        $validated = $request->validate([
+            'course_id' => ['required', 'exists:courses,id'],
+            'user_id' => $canManageRegistrations
+                ? ['required', Rule::exists('users', 'id')->where('role', 'Student')]
+                : ['prohibited'],
+        ]);
+
+        $userId = $canManageRegistrations ? (int) $validated['user_id'] : Auth::id();
+
+        $exists = Registration::where('user_id', $userId)
+            ->where('course_id', $request->course_id)
+            ->exists();
+
+        if ($exists) {
+            return back()->withInput()->with('error', 'This student is already registered for that course.');
+        }
+
+        Registration::firstOrCreate([
+            'user_id' => $userId,
+            'course_id' => $request->course_id,
+        ]);
+
+        return redirect()->route('registrations.index')->with('success', 'Course registration saved successfully.');
+    }
+
+    public function destroy(Registration $registration)
+    {
+        if ($registration->user_id !== Auth::id() && ! Auth::user()->can('manage registrations')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $registration->delete();
+
+        return back()->with('success', 'Registration removed.');
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\app\Http\Controllers\StudentController.php =====
+
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Facades\Hash;
+
+class StudentController extends Controller implements HasMiddleware
+{
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('auth'),
+            new Middleware('role:Administrator'),
+        ];
+    }
+
+    public function index()
+    {
+        $students = User::where('role', 'Student')->get();
+
+        return view('students.index', compact('students'));
+    }
+
+    public function create()
+    {
+        return view('students.create');
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users',
+            'password' => 'required|min:8',
+        ]);
+
+        User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'role' => 'Student',
+        ])->assignRole('Student');
+
+        return redirect()->route('students.index')->with('success', 'Student created successfully.');
+    }
+
+    public function edit(User $student)
+    {
+        return view('students.edit', compact('student'));
+    }
+
+    public function update(Request $request, User $student)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email,'.$student->id,
+        ]);
+
+        $student->update($request->only('name', 'email'));
+
+        return redirect()->route('students.index')->with('success', 'Student updated successfully.');
+    }
+
+    public function destroy(User $student)
+    {
+        $student->delete();
+
+        return redirect()->route('students.index')->with('success', 'Student deleted successfully.');
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\app\Http\Controllers\UserController.php =====
+
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
+
+class UserController extends Controller implements HasMiddleware
+{
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('auth'),
+            new Middleware('approved'), // <-- Added so unapproved admins can't view this
+            new Middleware('role:Administrator'),
+        ];
+    }
+
+    public function index()
+    {
+        $users = User::all();
+
+        return view('users.index', compact('users'));
+    }
+
+    // Show the list of pending users
+    public function pending()
+    {
+        $users = User::whereIn('role', ['Lecturer', 'Administrator'])
+            ->where('is_approved', false)
+            ->latest()
+            ->get();
+
+        return view('users.pending', compact('users'));
+    }
+
+    // Approve the user
+    public function approve(User $user)
+    {
+        $user->update([
+            'is_approved' => true,
+            'approved_at' => now(),
+        ]);
+
+        return back()->with('success', "{$user->name} has been approved!");
+    }
+
+    public function update(Request $request, User $user)
+    {
+        $request->validate([
+            'role' => 'required|in:Administrator,Lecturer,Student',
+        ]);
+
+        $roleChanged = $user->role !== $request->role;
+        $requiresApproval = in_array($request->role, ['Administrator', 'Lecturer']);
+        $requiresNewApproval = $roleChanged && $requiresApproval;
+
+        $user->update([
+            'role' => $request->role,
+            'is_approved' => $requiresNewApproval ? false : ($requiresApproval ? $user->is_approved : true),
+            'approved_at' => $requiresNewApproval ? null : $user->approved_at,
+        ]);
+        $user->syncRoles($request->role);
+
+        return back()->with('success', 'User role updated successfully.');
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\app\Http\Middleware\EnsureUserIsApproved.php =====
+
+<?php
+
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+class EnsureUserIsApproved
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        $user = $request->user();
+
+        // If the user is a Lecturer or Administrator and is NOT approved, block them.
+        if ($user && in_array($user->role, ['Lecturer', 'Administrator']) && ! $user->is_approved) {
+            return redirect()->route('pending.approval');
+        }
+
+        return $next($request);
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\app\Http\Middleware\RoleMiddleware.php =====
+
+<?php
+
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+class RoleMiddleware
+{
+    public function handle(Request $request, Closure $next, string $role): Response
+    {
+        // If the user is not logged in OR their role doesn't match
+        if (! $request->user() || $request->user()->role !== $role) {
+            abort(403, 'Unauthorized access. You do not have the correct role.');
+        }
+
+        return $next($request);
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\database\migrations\2026_11_01_071144_create_users_table.php =====
+
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('email')->unique();
+            $table->timestamp('email_verified_at')->nullable();
+            $table->string('password');
+            $table->string('role')->default('Student'); 
+            $table->rememberToken();
+            $table->timestamps();
+        });
+
+        Schema::create('password_reset_tokens', function (Blueprint $table) {
+            $table->string('email')->primary();
+            $table->string('token');
+            $table->timestamp('created_at')->nullable();
+        });
+
+        Schema::create('sessions', function (Blueprint $table) {
+            $table->string('id')->primary();
+            $table->foreignId('user_id')->nullable()->index();
+            $table->string('ip_address', 45)->nullable();
+            $table->text('user_agent')->nullable();
+            $table->longText('payload');
+            $table->integer('last_activity')->index();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('sessions');
+        Schema::dropIfExists('password_reset_tokens');
+        Schema::dropIfExists('users');
+    }
+};
+
+===== C:\Users\HP\Desktop\student-management-system-main\database\migrations\2026_11_01_071145_create_courses_table.php =====
+
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('courses', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('code')->unique();
+            $table->foreignId('lecturer_id')->nullable()->constrained('users')->onDelete('set null');
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('courses');
+    }
+};
+
+===== C:\Users\HP\Desktop\student-management-system-main\database\migrations\2026_11_01_071146_create_registrations_table.php =====
+
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('registrations', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('course_id')->constrained('courses')->onDelete('cascade');
+            $table->timestamps();
+
+            $table->unique(['user_id', 'course_id']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('registrations');
+    }
+};
+
+===== C:\Users\HP\Desktop\student-management-system-main\database\migrations\2026_11_01_082928_create_permission_tables.php =====
+
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        $teams = config('permission.teams');
+        $tableNames = config('permission.table_names');
+        $columnNames = config('permission.column_names');
+        $pivotRole = $columnNames['role_pivot_key'] ?? 'role_id';
+        $pivotPermission = $columnNames['permission_pivot_key'] ?? 'permission_id';
+
+        throw_if(empty($tableNames), Exception::class, 'Error: config/permission.php not loaded. Run [php artisan config:clear] and try again.');
+        throw_if($teams && empty($columnNames['team_foreign_key'] ?? null), Exception::class, 'Error: team_foreign_key on config/permission.php not loaded. Run [php artisan config:clear] and try again.');
+
+        Schema::create($tableNames['permissions'], static function (Blueprint $table) {
+            // $table->engine('InnoDB');
+            $table->bigIncrements('id'); // permission id
+            $table->string('name');       // For MyISAM use string('name', 225); // (or 166 for InnoDB with Redundant/Compact row format)
+            $table->string('guard_name'); // For MyISAM use string('guard_name', 25);
+            $table->timestamps();
+
+            $table->unique(['name', 'guard_name']);
+        });
+
+        Schema::create($tableNames['roles'], static function (Blueprint $table) use ($teams, $columnNames) {
+            // $table->engine('InnoDB');
+            $table->bigIncrements('id'); // role id
+            if ($teams || config('permission.testing')) { // permission.testing is a fix for sqlite testing
+                $table->unsignedBigInteger($columnNames['team_foreign_key'])->nullable();
+                $table->index($columnNames['team_foreign_key'], 'roles_team_foreign_key_index');
+            }
+            $table->string('name');       // For MyISAM use string('name', 225); // (or 166 for InnoDB with Redundant/Compact row format)
+            $table->string('guard_name'); // For MyISAM use string('guard_name', 25);
+            $table->timestamps();
+            if ($teams || config('permission.testing')) {
+                $table->unique([$columnNames['team_foreign_key'], 'name', 'guard_name']);
+            } else {
+                $table->unique(['name', 'guard_name']);
+            }
+        });
+
+        Schema::create($tableNames['model_has_permissions'], static function (Blueprint $table) use ($tableNames, $columnNames, $pivotPermission, $teams) {
+            $table->unsignedBigInteger($pivotPermission);
+
+            $table->string('model_type');
+            $table->unsignedBigInteger($columnNames['model_morph_key']);
+            $table->index([$columnNames['model_morph_key'], 'model_type'], 'model_has_permissions_model_id_model_type_index');
+
+            $table->foreign($pivotPermission)
+                ->references('id') // permission id
+                ->on($tableNames['permissions'])
+                ->onDelete('cascade');
+            if ($teams) {
+                $table->unsignedBigInteger($columnNames['team_foreign_key']);
+                $table->index($columnNames['team_foreign_key'], 'model_has_permissions_team_foreign_key_index');
+
+                $table->primary([$columnNames['team_foreign_key'], $pivotPermission, $columnNames['model_morph_key'], 'model_type'],
+                    'model_has_permissions_permission_model_type_primary');
+            } else {
+                $table->primary([$pivotPermission, $columnNames['model_morph_key'], 'model_type'],
+                    'model_has_permissions_permission_model_type_primary');
+            }
+
+        });
+
+        Schema::create($tableNames['model_has_roles'], static function (Blueprint $table) use ($tableNames, $columnNames, $pivotRole, $teams) {
+            $table->unsignedBigInteger($pivotRole);
+
+            $table->string('model_type');
+            $table->unsignedBigInteger($columnNames['model_morph_key']);
+            $table->index([$columnNames['model_morph_key'], 'model_type'], 'model_has_roles_model_id_model_type_index');
+
+            $table->foreign($pivotRole)
+                ->references('id') // role id
+                ->on($tableNames['roles'])
+                ->onDelete('cascade');
+            if ($teams) {
+                $table->unsignedBigInteger($columnNames['team_foreign_key']);
+                $table->index($columnNames['team_foreign_key'], 'model_has_roles_team_foreign_key_index');
+
+                $table->primary([$columnNames['team_foreign_key'], $pivotRole, $columnNames['model_morph_key'], 'model_type'],
+                    'model_has_roles_role_model_type_primary');
+            } else {
+                $table->primary([$pivotRole, $columnNames['model_morph_key'], 'model_type'],
+                    'model_has_roles_role_model_type_primary');
+            }
+        });
+
+        Schema::create($tableNames['role_has_permissions'], static function (Blueprint $table) use ($tableNames, $pivotRole, $pivotPermission) {
+            $table->unsignedBigInteger($pivotPermission);
+            $table->unsignedBigInteger($pivotRole);
+
+            $table->foreign($pivotPermission)
+                ->references('id') // permission id
+                ->on($tableNames['permissions'])
+                ->onDelete('cascade');
+
+            $table->foreign($pivotRole)
+                ->references('id') // role id
+                ->on($tableNames['roles'])
+                ->onDelete('cascade');
+
+            $table->primary([$pivotPermission, $pivotRole], 'role_has_permissions_permission_id_role_id_primary');
+        });
+
+        app('cache')
+            ->store(config('permission.cache.store') != 'default' ? config('permission.cache.store') : null)
+            ->forget(config('permission.cache.key'));
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        $tableNames = config('permission.table_names');
+
+        throw_if(empty($tableNames), Exception::class, 'Error: config/permission.php not found and defaults could not be merged. Please publish the package configuration before proceeding, or drop the tables manually.');
+
+        Schema::drop($tableNames['role_has_permissions']);
+        Schema::drop($tableNames['model_has_roles']);
+        Schema::drop($tableNames['model_has_permissions']);
+        Schema::drop($tableNames['roles']);
+        Schema::drop($tableNames['permissions']);
+    }
+};
+
+===== C:\Users\HP\Desktop\student-management-system-main\database\migrations\2026_11_01_083028_create_cache_table.php =====
+
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('cache', function (Blueprint $table) {
+            $table->string('key')->primary();
+            $table->mediumText('value');
+            $table->bigInteger('expiration')->index();
+        });
+
+        Schema::create('cache_locks', function (Blueprint $table) {
+            $table->string('key')->primary();
+            $table->string('owner');
+            $table->bigInteger('expiration')->index();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('cache');
+        Schema::dropIfExists('cache_locks');
+    }
+};
+
+===== C:\Users\HP\Desktop\student-management-system-main\database\migrations\2026_11_01_133248_add_is_approved_to_users_table.php =====
+
+<?php
+
+// database/migrations/xxxx_xx_xx_xxxxxx_add_is_approved_to_users_table.php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('users', function (Blueprint $table) {
+            $table->boolean('is_approved')->default(false)->after('role');
+            $table->timestamp('approved_at')->nullable()->after('is_approved');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('users', function (Blueprint $table) {
+            $table->dropColumn(['is_approved', 'approved_at']);
+        });
+    }
+};
+
+===== C:\Users\HP\Desktop\student-management-system-main\database\seeders\DatabaseSeeder.php =====
+
+<?php
+
+namespace Database\Seeders;
+
+use App\Models\Course;
+use App\Models\Registration;
+use App\Models\User;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
+
+class DatabaseSeeder extends Seeder
+{
+    public function run(): void
+    {
+        app()[PermissionRegistrar::class]->forgetCachedPermissions();
+
+        // Roles
+                // Roles and permissions
+        $this->call(RolesAndPermissionsSeeder::class);
+
+        // Administrator
+        $admin = $this->makeUser('Patience', 'patience@gmail.com', 'Administrator');
+
+        // Lecturer
+        $lecturer = $this->makeUser('Khalil', 'khalil@gmail.com', 'Lecturer');
+
+        // Students
+        $students = [];
+        $studentData = [
+            ['Macarthy',         'macarthy@gmail.com'],
+            ['Aisha Nakato',     'aisha.nakato@example.com'],
+            ['Brian Okello',     'brian.okello@example.com'],
+            ['Grace Namukasa',   'grace.namukasa@example.com'],
+            ['Daniel Ssemwanga', 'daniel.ssemwanga@example.com'],
+        ];
+        foreach ($studentData as [$name, $email]) {
+            $students[] = $this->makeUser($name, $email, 'Student');
+        }
+
+        // Courses
+        $course1 = Course::updateOrCreate(
+            ['code' => 'BUC3131'],
+            ['name' => 'Advanced Web Application Development', 'lecturer_id' => $lecturer->id]
+        );
+        $course2 = Course::updateOrCreate(
+            ['code' => 'BIT2201'],
+            ['name' => 'Database Systems', 'lecturer_id' => $lecturer->id]
+        );
+        Course::updateOrCreate(['code' => 'BIS2104'], ['name' => 'Information Systems']);
+        Course::updateOrCreate(['code' => 'BSE3102'], ['name' => 'Software Engineering']);
+
+        // Registrations: all 5 students in course 1, first 3 in course 2
+        foreach ($students as $student) {
+            Registration::firstOrCreate(['user_id' => $student->id, 'course_id' => $course1->id]);
+        }
+        foreach (array_slice($students, 0, 3) as $student) {
+            Registration::firstOrCreate(['user_id' => $student->id, 'course_id' => $course2->id]);
+        }
+    }
+
+    private function makeUser(string $name, string $email, string $role): User
+    {
+        $user = User::firstOrCreate(
+            ['email' => $email],
+            [
+                'name' => $name,
+                'password' => Hash::make('password'),
+                'role' => $role,
+                'is_approved' => true,
+                'approved_at' => now(),
+            ]
+        );
+
+        $user->syncRoles($role);
+
+        return $user;
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\database\seeders\RolesAndPermissionsSeeder.php =====
+
+<?php
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
+
+class RolesAndPermissionsSeeder extends Seeder
+{
+    public function run(): void
+    {
+        app()[PermissionRegistrar::class]->forgetCachedPermissions();
+
+        $permissions = [
+            'manage students',
+            'manage courses',
+            'manage registrations',
+            'manage users',
+            'view courses',
+            'view assigned courses',
+            'register courses',
+            'view own registrations',
+        ];
+
+        foreach ($permissions as $permission) {
+            Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
+        }
+
+        Role::firstOrCreate(['name' => 'Administrator', 'guard_name' => 'web'])
+            ->syncPermissions([
+                'manage students',
+                'manage courses',
+                'manage registrations',
+                'manage users',
+                'view courses',
+            ]);
+
+        Role::firstOrCreate(['name' => 'Lecturer', 'guard_name' => 'web'])
+            ->syncPermissions([
+                'view courses',
+                'view assigned courses',
+            ]);
+
+        Role::firstOrCreate(['name' => 'Student', 'guard_name' => 'web'])
+            ->syncPermissions([
+                'view courses',
+                'register courses',
+                'view own registrations',
+            ]);
+    }
+}
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\welcome.blade.php =====
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Management System | Campus Portal</title>
+    <meta name="description" content="Manage your courses, registrations, and university records.">
+    
+    <!-- Real Image Path -->
+    <link rel="icon" type="image/png" href="assets/img/logo.png">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 
+                            50: '#fdf8f6',
+                            100: '#f2e8e5',
+                            500: '#8b5a2b', // Medium Brown
+                            600: '#6b4423', // Deep Brown
+                            700: '#4a2c14', // Darkest Brown
+                            800: '#35200e'
+                        },
+                        gold: { 
+                            400: '#fbbf24', 
+                            500: '#f59e0b', 
+                            600: '#d97706' 
+                        },
+                    },
+                    fontFamily: { sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'] },
+                }
+            }
+        };
+    </script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        html {
+            scroll-behavior: smooth;
+        }
+
+        .text-gradient {
+            background: linear-gradient(to right, #fbbf24, #f59e0b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .glow-brown {
+            box-shadow: 0 0 20px rgba(107, 68, 35, 0.4);
+        }
+
+        .hero-section {
+            isolation: isolate;
+            min-height: 690px;
+            background: #35200e;
+        }
+
+        .hero-video,
+        .hero-shade {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .hero-video {
+            z-index: -2;
+            object-fit: cover;
+            filter: saturate(1.12) contrast(1.08);
+        }
+
+        .hero-shade {
+            z-index: -1;
+            background: linear-gradient(90deg, rgba(53, 32, 14, 0.72) 0%, rgba(74, 44, 20, 0.46) 48%, rgba(53, 32, 14, 0.22) 100%);
+        }
+
+        .hero-content {
+            animation: rise-in 850ms both;
+        }
+
+        .course-panel {
+            animation: rise-in 850ms 160ms both;
+        }
+
+        .role-card {
+            transition: transform 280ms ease, box-shadow 280ms ease;
+        }
+
+        .role-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 18px 34px rgba(74, 44, 20, 0.12);
+        }
+
+        .role-photo img {
+            transition: transform 500ms ease;
+        }
+
+        .role-card:hover .role-photo img {
+            transform: scale(1.05);
+        }
+
+        @keyframes rise-in {
+            from {
+                opacity: 0;
+                transform: translateY(22px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .hero-section {
+                min-height: auto;
+            }
+
+            .hero-shade {
+                background: rgba(53, 32, 14, 0.62);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            html {
+                scroll-behavior: auto;
+            }
+
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                scroll-behavior: auto !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-brand-50 text-slate-900 font-sans antialiased">
+    
+    <!-- Start: Header -->
+    <header class="fixed top-0 left-0 right-0 z-50 bg-white border-b border-brand-100">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-20">
+                <a href="/" class="flex items-center gap-3">
+                    <img src="assets/img/logo.png" alt="Makerere University Business School logo" class="h-14 w-14 object-contain">
+
+                    <div class="hidden sm:block">
+                        <p class="text-base font-bold text-brand-700 leading-tight">Student Management</p>
+                        <p class="text-xs text-brand-500">Courses and registrations</p>
+                    </div>
+                </a>
+                <div class="hidden md:flex items-center gap-8">
+                    <a href="/" class="text-brand-700 text-base font-semibold">Home</a>
+                    <a href="#how-it-works" class="text-brand-500 hover:text-brand-700 transition-colors text-base font-medium">How it works</a>
+                    <a href="#services" class="text-brand-500 hover:text-brand-700 transition-colors text-base font-medium">Services</a>
+                    <a href="#who" class="text-brand-500 hover:text-brand-700 transition-colors text-base font-medium">Who can use it</a>
+                    
+                    <!-- Laravel Auth Routes -->
+                    <a href="{{ route('login') }}" class="px-5 py-2.5 border border-brand-200 text-brand-700 rounded-lg font-medium text-base hover:bg-brand-50 hover:border-brand-500 transition">Sign in</a>
+                    <a href="{{ route('register') }}" class="px-5 py-2.5 bg-brand-600 text-white rounded-lg font-medium text-base hover:bg-brand-700 glow-brown transition">Register</a>
+                </div>
+            </div>
+        </div>
+    </header>
+    <!-- End: Header -->
+
+    <!-- Start: Hero -->
+    <section class="hero-section relative pt-20 text-white">
+        <video class="hero-video" autoplay muted loop playsinline preload="metadata" poster="https://images.pexels.com/photos/267885/pexels-photo-267885.jpeg?auto=compress&cs=tinysrgb&w=2000" aria-hidden="true">
+            <source src="https://videos.pexels.com/video-files/3195394/3195394-hd_1920_1080_25fps.mp4" type="video/mp4">
+        </video>
+        <div class="hero-shade" aria-hidden="true"></div>
+        <div class="hero-content max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+            <div class="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center py-16 lg:py-24">
+                <div class="text-center lg:text-left">
+                    <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/30 bg-brand-800/50 mb-6">
+                        <i data-lucide="calendar" class="w-5 h-5 text-gold-400"></i>
+                        <span class="text-base font-medium text-white">Academic Year 2026/2027</span>
+                    </div>
+                    <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight text-white">
+                        Manage your courses.<br>
+                        <span class="text-gradient">Track your progress.</span>
+                    </h1>
+                    <p class="text-base sm:text-lg text-white/90 max-w-xl mx-auto lg:mx-0 mb-7 leading-relaxed">
+                        Your academic journey, organized in one place. At Makerere University Business School, students can register for courses, lecturers can follow their classes, and administrators can keep everything running smoothly.
+                    </p>
+                    <div class="grid gap-3 text-left max-w-xl mx-auto lg:mx-0 mb-9">
+                        <div class="flex items-start gap-3 text-base text-white/90">
+                            <i data-lucide="check-circle-2" class="w-5 h-5 text-gold-400 mt-0.5 shrink-0"></i>
+                            <span>Register for a course in one click.</span>
+                        </div>
+                        <div class="flex items-start gap-3 text-base text-white/90">
+                            <i data-lucide="check-circle-2" class="w-5 h-5 text-gold-400 mt-0.5 shrink-0"></i>
+                            <span>No duplicate registrations for the same course.</span>
+                        </div>
+                        <div class="flex items-start gap-3 text-base text-white/90">
+                            <i data-lucide="check-circle-2" class="w-5 h-5 text-gold-400 mt-0.5 shrink-0"></i>
+                            <span>Each person only sees what their role allows.</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
+                        <a href="{{ route('register') }}" class="group flex items-center gap-2 px-8 py-4 bg-brand-600 text-white rounded-xl font-semibold text-base hover:bg-brand-700 glow-brown w-full sm:w-auto justify-center transition-all">
+                            Create student account
+                            <i data-lucide="arrow-right" class="w-5 h-5 group-hover:translate-x-1 transition-transform"></i>
+                        </a>
+                        <a href="{{ route('login') }}" class="flex items-center justify-center gap-2 px-8 py-4 border border-white/50 bg-white/10 rounded-xl font-semibold text-base text-white hover:bg-white/20 w-full sm:w-auto transition-all">
+                            I already have an account
+                        </a>
+                    </div>
+                </div>
+
+                <div class="course-panel relative">
+                    <div class="rounded-2xl border border-gold-500/50 bg-brand-800 p-7 sm:p-9 shadow-2xl shadow-brand-800/40">
+                        <div class="flex items-center justify-between mb-7">
+                            <div>
+                                <p class="text-sm uppercase tracking-wider text-gold-400 font-bold">Today</p>
+                                <p class="text-2xl font-bold text-white mt-1">Available Courses</p>
+                            </div>
+                            <span class="text-sm px-3 py-1.5 rounded-full bg-brand-700 text-gold-400 border border-brand-500 font-semibold">4 active</span>
+                        </div>
+                        <div class="space-y-4">
+                            <div class="flex items-start gap-3 p-4 rounded-xl bg-white border border-slate-100 hover:border-brand-200 transition">
+                                <div class="w-11 h-11 rounded-lg bg-brand-50 flex items-center justify-center shrink-0">
+                                    <i data-lucide="code" class="w-5 h-5 text-brand-600"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-base font-bold text-slate-800 truncate">Advanced Web Development</p>
+                                    <p class="text-sm text-slate-500 mt-1">BUC3131 Â· 2026/2027</p>
+                                </div>
+                                <span class="text-xs px-2.5 py-1.5 rounded-full bg-brand-50 text-brand-700 border border-brand-100 shrink-0">Available</span>
+                            </div>
+                            <div class="flex items-start gap-3 p-4 rounded-xl bg-white border border-slate-100 hover:border-brand-200 transition">
+                                <div class="w-11 h-11 rounded-lg bg-brand-50 flex items-center justify-center shrink-0">
+                                    <i data-lucide="database" class="w-5 h-5 text-brand-600"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-base font-bold text-slate-800 truncate">Database Systems</p>
+                                    <p class="text-sm text-slate-500 mt-1">BIT2201 Â· 2026/2027</p>
+                                </div>
+                                <span class="text-xs px-2.5 py-1.5 rounded-full bg-brand-50 text-brand-700 border border-brand-100 shrink-0">Available</span>
+                            </div>
+                            <div class="flex items-start gap-3 p-4 rounded-xl bg-white border border-slate-100 hover:border-brand-200 transition">
+                                <div class="w-11 h-11 rounded-lg bg-brand-50 flex items-center justify-center shrink-0">
+                                    <i data-lucide="layers" class="w-5 h-5 text-brand-600"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-base font-bold text-slate-800 truncate">Information Systems</p>
+                                    <p class="text-sm text-slate-500 mt-1">BIS2104 Â· 2026/2027</p>
+                                </div>
+                                <span class="text-xs px-2.5 py-1.5 rounded-full bg-brand-50 text-brand-700 border border-brand-100 shrink-0">Available</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <!-- End: Hero -->
+
+    <!-- Start: Roles Section -->
+    <section id="who" class="py-24 bg-brand-50 border-t border-brand-100">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center max-w-2xl mx-auto mb-14">
+                <p class="text-sm font-bold uppercase tracking-[0.2em] text-gold-600 mb-3">Roles</p>
+                <h2 class="text-3xl sm:text-4xl font-bold mb-4 text-brand-800">Three roles, three views</h2>
+                <p class="text-base text-brand-600">Students sign up themselves. Lecturers and administrators are added by an admin, with each person seeing the tools and records relevant to their work.</p>
+            </div>
+            <div class="grid md:grid-cols-3 gap-6">
+                <div class="role-card p-6 rounded-xl bg-white border border-brand-100 shadow-sm overflow-hidden">
+                    <div class="role-photo -mx-6 -mt-6 mb-5 h-44 overflow-hidden"><img src="https://images.pexels.com/photos/267885/pexels-photo-267885.jpeg?auto=compress&cs=tinysrgb&w=900" alt="University students celebrating at graduation" class="h-full w-full object-cover" loading="lazy"></div>
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-11 h-11 rounded-lg bg-brand-50 flex items-center justify-center"><i data-lucide="graduation-cap" class="w-5 h-5 text-brand-600"></i></div>
+                        <h3 class="font-bold text-brand-800">Students</h3>
+                    </div>
+                    <p class="text-base text-slate-600 mb-4">Find available courses, plan your semester, and manage your registrations from one simple student view.</p>
+                    <ul class="space-y-2 text-base text-slate-600">
+                        <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-brand-500 mt-0.5"></i>Register for new courses</li>
+                        <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-brand-500 mt-0.5"></i>Drop a registered course</li>
+                        <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-brand-500 mt-0.5"></i>View your own records only</li>
+                    </ul>
+                </div>
+                <div class="role-card p-6 rounded-xl bg-white border border-brand-100 shadow-sm overflow-hidden">
+                    <div class="role-photo -mx-6 -mt-6 mb-5 h-44 overflow-hidden"><img src="https://images.pexels.com/photos/3184325/pexels-photo-3184325.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Colleagues collaborating around a table" class="h-full w-full object-cover" loading="lazy"></div>
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-11 h-11 rounded-lg bg-gold-400/20 flex items-center justify-center"><i data-lucide="presentation" class="w-5 h-5 text-gold-600"></i></div>
+                        <h3 class="font-bold text-brand-800">Lecturers</h3>
+                    </div>
+                    <p class="text-base text-slate-600 mb-4">Keep your teaching organized with a clear view of assigned courses and the students taking them.</p>
+                    <ul class="space-y-2 text-base text-slate-600">
+                        <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-gold-600 mt-0.5"></i>See assigned courses</li>
+                        <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-gold-600 mt-0.5"></i>View registered students</li>
+                        <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-gold-600 mt-0.5"></i>Cannot edit admin settings</li>
+                    </ul>
+                </div>
+                <div class="role-card p-6 rounded-xl bg-white border border-brand-100 shadow-sm overflow-hidden">
+                    <div class="role-photo -mx-6 -mt-6 mb-5 h-44 overflow-hidden"><img src="https://images.pexels.com/photos/1181244/pexels-photo-1181244.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Student working on coursework at a laptop" class="h-full w-full object-cover" loading="lazy"></div>
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-11 h-11 rounded-lg bg-brand-50 flex items-center justify-center"><i data-lucide="shield" class="w-5 h-5 text-brand-600"></i></div>
+                        <h3 class="font-bold text-brand-800">Administrators</h3>
+                    </div>
+                    <p class="text-base text-slate-600 mb-4">Support the whole campus community by managing courses, student records, and access roles.</p>
+                    <ul class="space-y-2 text-base text-slate-600">
+                        <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-brand-500 mt-0.5"></i>Full Student CRUD</li>
+                        <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-brand-500 mt-0.5"></i>Full Course CRUD</li>
+                        <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-brand-500 mt-0.5"></i>Change user roles</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+    <!-- End: Roles Section -->
+
+    <!-- Start: Footer -->
+    <footer class="bg-brand-800 text-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-4 text-sm text-brand-100 border-t border-brand-700 pt-8">
+                <p>Â© {{ date('Y') }} Makerere University Business School.</p>
+                
+            </div>
+        </div>
+    </footer>
+    <!-- End: Footer -->
+
+    <script>lucide.createIcons();</script>
+</body>
+</html>
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\auth\login.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="flex min-h-[65vh] flex-1 items-center justify-center p-4">
+    <div class="w-full max-w-md">
+        <!-- Start: Brand -->
+        <div class="flex justify-center mb-8">
+            <a href="{{ url('/') }}" class="inline-flex flex-col items-center gap-3">
+                <img src="{{ asset('assets/img/logo.png') }}" alt="Campus Service Portal" class="h-16 w-16">
+                <span class="text-sm font-semibold text-[#3e2723]">Campus Service Portal</span>
+            </a>
+        </div>
+        <!-- End: Brand -->
+
+        <!-- Start: Sign in card -->
+        <div class="surface-panel p-6 sm:p-8">
+            <div class="account-photo">
+                <img src="https://images.pexels.com/photos/267885/pexels-photo-267885.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Students studying in a university library">
+            </div>
+            <div class="mb-6">
+            <h1 class="text-2xl font-bold text-coffee-800">Sign in</h1>
+            <p class="mt-2 text-base text-coffee-500">Use your campus email to access your courses and account.</p>
+            </div>
+
+            <!-- Start: Sign in form -->
+            <form method="POST" action="{{ route('login.store') }}" class="space-y-5">
+                @csrf
+                <div>
+                    <label for="email" class="form-label">Campus email</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#a1887f]">
+                            <i data-lucide="mail" class="h-5 w-5"></i>
+                        </div>
+                        <input type="email" id="email" name="email" value="{{ old('email') }}" required autofocus
+                            placeholder="you@campus.ac.ug"
+                            class="form-control pl-10">
+                    </div>
+                    @error('email')
+                        <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span>
+                    @enderror
+                </div>
+                <div>
+                    <label for="password" class="form-label">Password</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#a1887f]">
+                            <i data-lucide="lock" class="h-5 w-5"></i>
+                        </div>
+                        <input type="password" id="password" name="password" required placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                            class="form-control pl-10">
+                    </div>
+                    @error('password')
+                        <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span>
+                    @enderror
+                </div>
+                <button type="submit" class="btn-primary w-full">Sign in</button>
+            </form>
+            <!-- End: Sign in form -->
+
+            <p class="mt-6 text-center text-base text-coffee-500">
+                New here?
+                <a href="{{ route('register') }}" class="font-semibold text-accent-600 hover:text-coffee-800">Create an account</a>
+            </p>
+        </div>
+        <!-- End: Sign in card -->
+    </div>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\auth\pending-approval.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="flex min-h-[65vh] flex-1 items-center justify-center p-4">
+    <div class="w-full max-w-md">
+        <!-- Brand -->
+        <div class="flex justify-center mb-8">
+            <a href="{{ url('/') }}" class="inline-flex flex-col items-center gap-3">
+                <img src="{{ asset('assets/img/logo.png') }}" alt="Campus Service Portal" class="h-16 w-16">
+                <span class="text-sm font-semibold text-[#3e2723]">Campus Service Portal</span>
+            </a>
+        </div>
+
+        <!-- Pending Card -->
+        <div class="surface-panel p-6 text-center sm:p-8">
+            <div class="account-photo">
+                <img src="https://images.pexels.com/photos/5212669/pexels-photo-5212669.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Students learning together on campus">
+            </div>
+            <div class="flex justify-center mb-4">
+                <div class="h-14 w-14 rounded-full bg-coffee-50 flex items-center justify-center text-coffee-600">
+                    <i data-lucide="clock" class="h-7 w-7"></i>
+                </div>
+            </div>
+
+            <h1 class="text-2xl font-bold text-coffee-800">Account Pending Approval</h1>
+            <p class="mt-3 text-base leading-7 text-coffee-500">
+                Your {{ auth()->user()->role }} account has been created. An administrator must approve it before you can access the dashboard.
+            </p>
+            
+            <form method="POST" action="{{ route('logout') }}" class="mt-6">
+                @csrf
+                <button type="submit" class="btn-primary w-full">
+                    Sign out
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\auth\register.blade.php =====
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Account | Student Management</title>
+    
+    <!-- Image Path -->
+    <link rel="icon" type="image/png" href="assets/img/logo.png">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 
+                            50: '#fdf8f6',
+                            100: '#f2e8e5',
+                            200: '#e5d2cb',
+                            500: '#8b5a2b',
+                            600: '#6b4423',
+                            700: '#4a2c14',
+                            800: '#35200e'
+                        },
+                        gold: { 
+                            500: '#f59e0b', 
+                            600: '#d97706' 
+                        },
+                    },
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                }
+            }
+        };
+    </script>
+</head>
+<body class="bg-brand-50 text-slate-900 font-sans antialiased min-h-screen flex flex-col justify-center items-center p-4 sm:p-8">
+
+    <div class="w-full max-w-md">
+        
+        <!-- Logo -->
+        <div class="flex justify-center mb-8">
+            <a href="/">
+                <img src="assets/img/logo.png" alt="Student Management logo" class="h-16 w-16 object-contain">
+            </a>
+        </div>
+
+        <!-- Register Card -->
+        <div class="rounded-2xl border border-brand-200 bg-white p-6 sm:p-9 shadow-xl shadow-brand-100/60">
+            <div class="mb-6 h-36 overflow-hidden rounded-xl border border-brand-100">
+                <img src="https://images.pexels.com/photos/3184325/pexels-photo-3184325.jpeg?auto=compress&cs=tinysrgb&w=900" alt="A campus group collaborating around a table" class="h-full w-full object-cover">
+            </div>
+            <div class="mb-6">
+            <p class="text-xs font-bold uppercase tracking-wider text-gold-600">Campus portal access</p>
+            <h1 class="mt-2 text-3xl font-bold text-brand-800">Create your account</h1>
+            <p class="mt-2 text-base leading-6 text-slate-600">Request access to course and registration services. Lecturer and administrator accounts need approval before sign-in.</p>
+            </div>
+
+            <!-- Form -->
+            <form method="POST" action="{{ route('register.store') }}" class="space-y-4">
+                @csrf
+                
+                <div>
+                    <label for="name" class="block text-base font-semibold text-brand-700 mb-2">Full name <span class="text-gold-600">*</span></label>
+                    <input type="text" id="name" name="name" value="{{ old('name') }}" required autofocus placeholder="Aisha Namuli" 
+                           class="w-full border border-slate-300 rounded-lg p-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all">
+                    @error('name') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                </div>
+
+                <div>
+                    <label for="email" class="block text-base font-semibold text-brand-700 mb-2">Campus email <span class="text-gold-600">*</span></label>
+                    <input type="email" id="email" name="email" value="{{ old('email') }}" required placeholder="student@example.com" 
+                           class="w-full border border-slate-300 rounded-lg p-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all">
+                    @error('email') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                </div>
+
+                <!-- Role selector -->
+                <div>
+                    <label for="role" class="block text-base font-semibold text-brand-700 mb-2">Register as <span class="text-gold-600">*</span></label>
+                    <select id="role" name="role" required
+                            class="w-full border border-slate-300 rounded-lg p-3 text-base bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all">
+                        <option value="Student" {{ old('role') === 'Student' ? 'selected' : '' }}>Student</option>
+                        <option value="Lecturer" {{ old('role') === 'Lecturer' ? 'selected' : '' }}>Lecturer</option>
+                        <option value="Administrator" {{ old('role') === 'Administrator' ? 'selected' : '' }}>Administrator</option>
+                    </select>
+                    @error('role') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                    <p class="mt-2 text-sm leading-5 text-slate-500">
+                        Lecturer &amp; Administrator accounts require admin approval before sign-in.
+                    </p>
+                </div>
+
+                <div>
+                    <label for="password" class="block text-base font-semibold text-brand-700 mb-2">Password <span class="text-gold-600">*</span></label>
+                    <input type="password" id="password" name="password" required minlength="8" 
+                           class="w-full border border-slate-300 rounded-lg p-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all">
+                    @error('password') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                </div>
+
+                <div>
+                    <label for="password_confirmation" class="block text-base font-semibold text-brand-700 mb-2">Confirm password <span class="text-gold-600">*</span></label>
+                    <input type="password" id="password_confirmation" name="password_confirmation" required minlength="8" 
+                           class="w-full border border-slate-300 rounded-lg p-3 text-base focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all">
+                </div>
+
+                <!-- Brown Button -->
+                <button type="submit" class="w-full py-3 px-4 mt-2 rounded-lg text-base font-bold text-white bg-brand-600 hover:bg-brand-700 transition-all shadow-md hover:shadow-lg">
+                    Create Account
+                </button>
+            </form>
+
+            <p class="mt-6 text-center text-base text-slate-600">
+                Already have an account?
+                <a href="{{ route('login') }}" class="text-brand-600 font-semibold hover:text-brand-800 transition">Sign in</a>
+            </p>
+        </div>
+    </div>
+
+</body>
+</html>
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\courses\create.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell max-w-2xl">
+    <header class="image-banner">
+        <div class="image-banner-copy">
+            <a href="{{ route('courses.index') }}" class="text-sm font-semibold text-white/80 hover:text-white">&larr; Back to courses</a>
+            <h1>Add New Course</h1>
+            <p>Enter the course details and assign a lecturer. You can update these details later.</p>
+        </div>
+        <div class="image-banner-media">
+            <img src="https://images.pexels.com/photos/5212669/pexels-photo-5212669.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Students collaborating during a study session" fetchpriority="high">
+        </div>
+    </header>
+    <div class="surface-panel p-6 sm:p-8">
+    <form action="{{ route('courses.store') }}" method="POST" class="space-y-5">
+        @csrf
+        <div>
+            <label for="name" class="form-label">Course Name</label>
+            <input type="text" id="name" name="name" value="{{ old('name') }}" required class="form-control">
+        </div>
+        <div>
+            <label for="code" class="form-label">Course Code</label>
+            <input type="text" id="code" name="code" value="{{ old('code') }}" required class="form-control">
+        </div>
+        <div>
+            <label for="lecturer_id" class="form-label">Assign Lecturer</label>
+            <select id="lecturer_id" name="lecturer_id" class="form-control">
+                <option value="">-- Select Lecturer --</option>
+                @foreach($lecturers as $lecturer)
+                    <option value="{{ $lecturer->id }}" {{ old('lecturer_id') == $lecturer->id ? 'selected' : '' }}>{{ $lecturer->name }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div class="flex flex-col-reverse gap-3 border-t border-coffee-100 pt-5 sm:flex-row sm:justify-end">
+            <a href="{{ route('courses.index') }}" class="btn-secondary">Cancel</a>
+            <button type="submit" class="btn-primary">Save Course</button>
+        </div>
+    </form>
+    </div>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\courses\edit.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell max-w-2xl">
+    <header class="image-banner">
+        <div class="image-banner-copy">
+            <a href="{{ route('courses.index') }}" class="text-sm font-semibold text-white/80 hover:text-white">&larr; Back to courses</a>
+            <h1>Edit Course</h1>
+            <p>Update the course name, code, or assigned lecturer.</p>
+        </div>
+        <div class="image-banner-media">
+            <img src="https://images.pexels.com/photos/3184325/pexels-photo-3184325.jpeg?auto=compress&cs=tinysrgb&w=900" alt="A team discussing course materials" fetchpriority="high">
+        </div>
+    </header>
+    <div class="surface-panel p-6 sm:p-8">
+    <form action="{{ route('courses.update', $course->id) }}" method="POST" class="space-y-5">
+        @csrf @method('PUT')
+        <div>
+            <label for="name" class="form-label">Course Name</label>
+            <input type="text" id="name" name="name" value="{{ old('name', $course->name) }}" required class="form-control">
+        </div>
+        <div>
+            <label for="code" class="form-label">Course Code</label>
+            <input type="text" id="code" name="code" value="{{ old('code', $course->code) }}" required class="form-control">
+        </div>
+        <div>
+            <label for="lecturer_id" class="form-label">Assign Lecturer</label>
+            <select id="lecturer_id" name="lecturer_id" class="form-control">
+                <option value="">-- Select Lecturer --</option>
+                @foreach($lecturers as $lecturer)
+                    <option value="{{ $lecturer->id }}" {{ old('lecturer_id', $course->lecturer_id) == $lecturer->id ? 'selected' : '' }}>
+                        {{ $lecturer->name }}
+                    </option>
+                @endforeach
+            </select>
+        </div>
+        <div class="flex flex-col-reverse gap-3 border-t border-coffee-100 pt-5 sm:flex-row sm:justify-end">
+            <a href="{{ route('courses.index') }}" class="btn-secondary">Cancel</a>
+            <button type="submit" class="btn-primary">Update Course</button>
+        </div>
+    </form>
+    </div>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\courses\index.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell">
+    
+    <!-- Page Header -->
+    <header class="image-banner">
+        <div class="image-banner-copy">
+            <p class="text-sm font-bold uppercase tracking-wider text-amber-300">Course catalog</p>
+            <h1>Available Courses</h1>
+            <p>Browse course details, find your lecturer, and explore the classes offered this semester.</p>
+            @if(auth()->user()->role === 'Administrator')
+                <a href="{{ route('courses.create') }}" class="btn-secondary mt-5 border-white/50 bg-white/10 text-white hover:bg-white/20 hover:text-white">
+                    Add a course
+                </a>
+            @endif
+        </div>
+        <div class="image-banner-media">
+            <img src="https://images.pexels.com/photos/267885/pexels-photo-267885.jpeg?auto=compress&cs=tinysrgb&w=1200" alt="A university library and study space" fetchpriority="high">
+        </div>
+    </header>
+
+    <!-- Courses Grid -->
+    <section aria-label="Course catalog" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        @forelse($courses as $course)
+            <article class="surface-panel group flex h-full flex-col p-6 hover:-translate-y-1 hover:shadow-card">
+                
+                <!-- Card Header -->
+                <div class="mb-4">
+                    <span class="inline-block px-2.5 py-1 rounded-md bg-coffee-50 text-coffee-700 text-xs font-bold uppercase tracking-wider mb-3">
+                        {{ $course->code }}
+                    </span>
+                    <h2 class="font-bold text-xl text-coffee-800 leading-tight group-hover:text-accent-600">{{ $course->name }}</h2>
+                </div>
+                
+                <!-- Lecturer Info -->
+                <div class="flex items-center gap-2 mb-6 text-base text-coffee-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-coffee-500"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    <span>{{ $course->lecturer ? $course->lecturer->name : 'Lecturer Not Assigned' }}</span>
+                </div>
+                
+                <!-- Actions (Pushed to the bottom) -->
+                <div class="mt-auto pt-4 border-t border-coffee-100 flex flex-wrap items-center justify-between gap-3">
+                    <a href="{{ route('courses.show', $course->id) }}" class="text-coffee-600 font-semibold text-sm hover:text-coffee-800 transition">
+                        View Details &rarr;
+                    </a>
+                    
+                    @if(auth()->user()->role === 'Administrator')
+                        <div class="flex items-center space-x-3">
+                            <a href="{{ route('courses.edit', $course->id) }}" class="text-accent-600 font-medium text-sm hover:text-coffee-800 transition">
+                                Edit
+                            </a>
+                            <form action="{{ route('courses.destroy', $course->id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this course?');" class="inline">
+                                @csrf 
+                                @method('DELETE')
+                                <button type="submit" class="text-red-500 font-medium text-sm hover:text-red-700 transition">
+                                    Delete
+                                </button>
+                            </form>
+                        </div>
+                    @endif
+                </div>
+            </article>
+        @empty
+            <!-- Empty State -->
+            <div class="surface-panel col-span-full py-12 text-center">
+                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto text-coffee-300 mb-4"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                <h3 class="text-lg font-bold text-coffee-800 mb-1">No courses available</h3>
+                <p class="text-coffee-500 text-base">There are currently no courses in the system.</p>
+                @if(auth()->user()->role === 'Administrator')
+                    <a href="{{ route('courses.create') }}" class="btn-primary mt-5">Add the first course</a>
+                @endif
+            </div>
+        @endforelse
+    </section>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\courses\show.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell max-w-4xl">
+    
+    <!-- Back Button -->
+    <div class="mb-6">
+        <a href="{{ route('courses.index') }}" class="inline-flex items-center text-sm font-semibold text-coffee-600 hover:text-coffee-800 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            Back to Courses
+        </a>
+    </div>
+
+    <!-- Course Header Card -->
+    <article class="surface-panel overflow-hidden mb-8">
+        <div class="image-banner image-banner--contained">
+            <div class="image-banner-copy">
+                <p class="text-sm font-bold uppercase tracking-wider text-amber-300">Course details</p>
+                <span class="mt-3 inline-block rounded-md bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white">
+                    {{ $course->code }}
+                </span>
+                <h1>{{ $course->name }}</h1>
+                <div class="mt-4 flex items-center gap-2 text-base text-white/85">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    Lecturer: <strong class="text-white">{{ $course->lecturer ? $course->lecturer->name : 'Not Assigned' }}</strong>
+                </div>
+            </div>
+            <div class="image-banner-media">
+                <img src="https://images.pexels.com/photos/5212669/pexels-photo-5212669.jpeg?auto=compress&cs=tinysrgb&w=1100" alt="Students working together in a classroom" fetchpriority="high">
+            </div>
+        </div>
+
+        @if($canViewRoster)
+        <!-- Registered Students Section -->
+        <div class="p-5 sm:p-8">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="text-xl font-bold text-coffee-800">Registered Students</h2>
+                    <p class="mt-1 text-sm text-coffee-500">Students currently enrolled in this course.</p>
+                </div>
+                <span class="bg-coffee-50 text-coffee-700 py-1 px-3 rounded-full text-sm font-bold border border-coffee-100">
+                    {{ $course->students->count() }} Enrolled
+                </span>
+            </div>
+
+            <div class="bg-coffee-50/50 rounded-xl border border-coffee-100 overflow-hidden">
+                <ul class="divide-y divide-coffee-100">
+                    @forelse($course->students as $student)
+                        <li class="p-4 flex items-center gap-4 hover:bg-white transition-colors">
+                            <!-- Student Avatar Initial -->
+                            <div class="w-10 h-10 rounded-full bg-coffee-200 text-coffee-800 flex items-center justify-center font-bold text-sm shrink-0" aria-hidden="true">
+                                {{ substr($student->name, 0, 1) }}
+                            </div>
+                            <div>
+                                <p class="text-base font-semibold text-coffee-800">{{ $student->name }}</p>
+                                <p class="text-sm text-coffee-500">{{ $student->email }}</p>
+                            </div>
+                        </li>
+                    @empty
+                        <li class="p-8 text-center flex flex-col items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-coffee-300 mb-3" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                            <p class="text-coffee-500 text-base">No students have registered for this course yet.</p>
+                        </li>
+                    @endforelse
+                </ul>
+            </div>
+        </div>
+        @else
+            <div class="p-5 sm:p-8">
+                <h2 class="text-xl font-bold text-coffee-800">Course overview</h2>
+                <p class="mt-2 text-base text-coffee-500">Contact the assigned lecturer for course-specific information.</p>
+            </div>
+        @endif
+    </article>
+    
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\dashboard\admin.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell">
+    <header class="image-banner">
+        <div class="image-banner-copy">
+            <p class="text-sm font-bold uppercase tracking-wider text-amber-300">Administration</p>
+            <h1>Welcome back, {{ auth()->user()->name }}</h1>
+            <p>Manage the people, courses, and access settings that keep the student portal running.</p>
+        </div>
+        <div class="image-banner-media">
+            <img src="https://images.pexels.com/photos/3184325/pexels-photo-3184325.jpeg?auto=compress&cs=tinysrgb&w=1100" alt="A team planning together around a table" fetchpriority="high">
+        </div>
+    </header>
+
+    <section aria-label="Administration tools" class="grid gap-5 md:grid-cols-3">
+        <a href="{{ route('students.index') }}" class="surface-panel group p-6 hover:-translate-y-1 hover:shadow-card">
+            <span class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-coffee-50 text-coffee-600" aria-hidden="true">01</span>
+            <h2 class="text-lg font-bold text-coffee-800 group-hover:text-accent-500">Manage students</h2>
+            <p class="mt-2 text-sm leading-6 text-coffee-500">Review student accounts and maintain their contact details.</p>
+        </a>
+        <a href="{{ route('courses.index') }}" class="surface-panel group p-6 hover:-translate-y-1 hover:shadow-card">
+            <span class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-coffee-50 text-coffee-600" aria-hidden="true">02</span>
+            <h2 class="text-lg font-bold text-coffee-800 group-hover:text-accent-500">Course catalog</h2>
+            <p class="mt-2 text-sm leading-6 text-coffee-500">Add, update, and review courses offered through the portal.</p>
+        </a>
+        <a href="{{ route('users.index') }}" class="surface-panel group p-6 hover:-translate-y-1 hover:shadow-card">
+            <span class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-coffee-50 text-coffee-600" aria-hidden="true">03</span>
+            <h2 class="text-lg font-bold text-coffee-800 group-hover:text-accent-500">User access</h2>
+            <p class="mt-2 text-sm leading-6 text-coffee-500">Review account roles and pending access approvals.</p>
+        </a>
+    </section>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\dashboard\student.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell">
+
+    <!-- Welcome Banner -->
+    <header class="image-banner">
+        <div class="image-banner-copy">
+            <p class="text-sm font-bold uppercase tracking-wider text-amber-300">Student portal</p>
+            <h1>Welcome back, {{ auth()->user()->name }}</h1>
+            <p>
+                This is your student portal. From here you can view the courses offered this semester and manage your course registrations.
+            </p>
+        </div>
+        <div class="image-banner-media">
+            <img src="https://images.pexels.com/photos/267885/pexels-photo-267885.jpeg?auto=compress&cs=tinysrgb&w=1100" alt="Graduates celebrating together on campus" fetchpriority="high">
+        </div>
+    </header>
+
+    <!-- Quick Actions Grid -->
+    <section aria-label="Student shortcuts" class="grid grid-cols-1 gap-5 md:grid-cols-2">
+        
+        <!-- Action Card 1: View Courses -->
+        <a href="{{ route('courses.index') }}" class="surface-panel group block p-6 hover:-translate-y-1 hover:shadow-card">
+            <div class="flex items-start gap-4">
+            <div class="w-12 h-12 rounded-lg bg-coffee-50 flex items-center justify-center shrink-0 group-hover:bg-coffee-100 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-coffee-600"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-bold text-coffee-800 group-hover:text-accent-500 transition-colors">View Available Courses</h2>
+                    <p class="text-base leading-6 text-coffee-500 mt-2">Browse the course catalog, review course details, and find classes to register for this semester.</p>
+                </div>
+            </div>
+        </a>
+
+        <!-- Action Card 2: My Registrations -->
+        <a href="{{ route('registrations.index') }}" class="surface-panel group block p-6 hover:-translate-y-1 hover:shadow-card">
+            <div class="flex items-start gap-4">
+            <div class="w-12 h-12 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 group-hover:bg-amber-100 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-bold text-coffee-800 group-hover:text-accent-500 transition-colors">My Registrations</h2>
+                    <p class="text-base leading-6 text-coffee-500 mt-2">Review your current course list or remove a course from your registrations.</p>
+                </div>
+            </div>
+        </a>
+
+    </section>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\layouts\app.blade.php =====
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        cream: '#faf6f2',
+                        coffee: {
+                            50: '#faf6f2',
+                            100: '#f0e6dc',
+                            200: '#e8ddd2',
+                            300: '#d7c4b3',
+                            400: '#b89b83',
+                            500: '#8d6e63',
+                            600: '#6d4c41',
+                            700: '#5d4037',
+                            800: '#3e2723',
+                            900: '#2b1b16',
+                        },
+                        accent: {
+                            500: '#a0522d',
+                            600: '#8b4513',
+                        }
+                    },
+                    boxShadow: {
+                        'soft': '0 1px 3px rgba(62, 39, 35, 0.06), 0 1px 2px rgba(62, 39, 35, 0.04)',
+                        'card': '0 4px 12px rgba(62, 39, 35, 0.08)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            color-scheme: light;
+            --page-bg: #faf6f2;
+            --surface: #ffffff;
+            --ink: #2b1b16;
+            --coffee: #3e2723;
+            --coffee-mid: #6d4c41;
+            --coffee-muted: #8d6e63;
+            --line: #e8ddd2;
+            --accent: #a0522d;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background: var(--page-bg);
+            color: var(--ink);
+        }
+
+        ::selection {
+            color: #fff;
+            background: var(--coffee-mid);
+        }
+
+        a,
+        button,
+        input,
+        select {
+            transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+        }
+
+        :focus-visible {
+            outline: 3px solid rgba(160, 82, 45, 0.35);
+            outline-offset: 2px;
+        }
+
+        .site-nav-inner {
+            max-width: 80rem;
+            gap: 1.25rem;
+        }
+
+        .site-nav-links {
+            min-width: 0;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .site-nav-links::-webkit-scrollbar {
+            display: none;
+        }
+
+        .app-main {
+            max-width: 80rem;
+            padding-top: 2.5rem;
+            padding-bottom: 3.5rem;
+        }
+
+        .page-shell {
+            width: 100%;
+            max-width: 80rem;
+            margin-inline: auto;
+        }
+
+        .page-heading {
+            margin-bottom: 2rem;
+        }
+
+        .page-heading h1 {
+            color: var(--coffee);
+            font-size: 2rem;
+            font-weight: 750;
+            line-height: 1.15;
+        }
+
+        .page-heading p {
+            max-width: 46rem;
+            margin-top: 0.5rem;
+            color: var(--coffee-muted);
+            font-size: 1rem;
+            line-height: 1.65;
+        }
+
+        .image-banner {
+            display: grid;
+            grid-template-columns: minmax(0, 1.25fr) minmax(16rem, 0.75fr);
+            overflow: hidden;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(232, 221, 210, 0.8);
+            border-radius: 0.875rem;
+            background: var(--coffee);
+            box-shadow: 0 8px 24px rgba(62, 39, 35, 0.12);
+            color: #fff;
+        }
+
+        .image-banner--contained {
+            margin: 0;
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        .image-banner-copy {
+            align-self: center;
+            padding: 2.25rem;
+        }
+
+        .image-banner-copy h1 {
+            margin-top: 0.5rem;
+            color: #fff;
+            font-size: 2rem;
+            font-weight: 750;
+            line-height: 1.15;
+        }
+
+        .image-banner-copy p {
+            max-width: 42rem;
+            margin-top: 0.75rem;
+            color: rgba(255, 255, 255, 0.88);
+            font-size: 1rem;
+            line-height: 1.7;
+        }
+
+        .image-banner-media {
+            min-height: 15rem;
+            overflow: hidden;
+        }
+
+        .image-banner-media img,
+        .account-photo img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .image-banner-media img {
+            min-height: 15rem;
+        }
+
+        .account-photo {
+            height: 10rem;
+            overflow: hidden;
+            margin-bottom: 1rem;
+            border: 1px solid var(--line);
+            border-radius: 0.75rem;
+        }
+
+        .surface-panel {
+            border: 1px solid var(--line);
+            border-radius: 0.75rem;
+            background: var(--surface);
+            box-shadow: 0 4px 16px rgba(62, 39, 35, 0.06);
+        }
+
+        .form-control {
+            display: block;
+            width: 100%;
+            min-height: 2.9rem;
+            border: 1px solid #d7c4b3;
+            border-radius: 0.5rem;
+            background: #fff;
+            padding: 0.7rem 0.85rem;
+            color: var(--ink);
+        }
+
+        .form-control:focus {
+            border-color: var(--coffee-mid);
+            box-shadow: 0 0 0 3px rgba(109, 76, 65, 0.12);
+            outline: none;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 0.45rem;
+            color: var(--coffee);
+            font-size: 0.9rem;
+            font-weight: 650;
+        }
+
+        .table-scroll {
+            overflow-x: auto;
+            border: 1px solid var(--line);
+            border-radius: 0.75rem;
+            background: #fff;
+            box-shadow: 0 4px 16px rgba(62, 39, 35, 0.05);
+        }
+
+        .data-table {
+            width: 100%;
+            min-width: 38rem;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        .data-table thead {
+            background: #f5eee8;
+        }
+
+        .data-table th {
+            padding: 1rem 1.25rem;
+            color: var(--coffee-mid);
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .data-table td {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid #f0e6dc;
+            color: #51403a;
+            font-size: 0.95rem;
+            vertical-align: middle;
+        }
+
+        .data-table tbody tr:hover {
+            background: #fcfaf8;
+        }
+
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            min-height: 2.75rem;
+            border: 1px solid var(--coffee-mid);
+            border-radius: 0.5rem;
+            background: var(--coffee-mid);
+            padding: 0.65rem 1rem;
+            color: #fff;
+            font-size: 0.92rem;
+            font-weight: 650;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            border-color: var(--coffee);
+            background: var(--coffee);
+        }
+
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 2.75rem;
+            border: 1px solid var(--line);
+            border-radius: 0.5rem;
+            background: #fff;
+            padding: 0.65rem 1rem;
+            color: var(--coffee-mid);
+            font-size: 0.92rem;
+            font-weight: 600;
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--coffee-muted);
+            background: #faf6f2;
+        }
+
+        @media (max-width: 640px) {
+            .site-nav-inner {
+                min-height: 4.5rem;
+                padding-inline: 1rem;
+            }
+
+            .site-nav-links {
+                gap: 0.15rem;
+            }
+
+            .app-main {
+                padding: 1.5rem 1rem 2.5rem;
+            }
+
+            .page-heading {
+                margin-bottom: 1.5rem;
+            }
+
+            .page-heading h1 {
+                font-size: 1.75rem;
+            }
+
+            .image-banner {
+                grid-template-columns: 1fr;
+                margin-bottom: 1.5rem;
+            }
+
+            .image-banner-media {
+                min-height: 11rem;
+                grid-row: 1;
+            }
+
+            .image-banner-media img {
+                min-height: 11rem;
+                max-height: 11rem;
+            }
+
+            .image-banner-copy {
+                padding: 1.5rem;
+            }
+
+            .image-banner-copy h1 {
+                font-size: 1.75rem;
+            }
+
+            .account-photo {
+                height: 8rem;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            html {
+                scroll-behavior: auto;
+            }
+
+            *,
+            *::before,
+            *::after {
+                scroll-behavior: auto !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-cream font-sans text-coffee-800 flex flex-col min-h-screen antialiased">
+
+    <!-- Top Navbar -->
+    <nav aria-label="Main navigation" class="bg-white/95 backdrop-blur-sm sticky top-0 z-50 border-b border-coffee-200 shadow-soft">
+        <div class="site-nav-inner mx-auto px-6 h-16 flex items-center justify-between">
+            <a href="/" class="flex items-center gap-2.5 font-bold text-lg text-coffee-700 hover:text-coffee-800 transition-colors">
+                <img 
+                    src="{{ asset('assets/img/logo.png') }}" 
+                    alt="Student Management Logo" 
+                    class="h-9 w-9 object-contain rounded-lg transition-transform hover:scale-105"
+                >
+                <span>Student Management</span>
+            </a>
+            
+            <div class="site-nav-links flex items-center gap-1 text-sm font-medium">
+                @auth
+                    <a href="{{ route('dashboard') }}" class="px-3 py-2 rounded-lg text-coffee-600 hover:text-coffee-800 hover:bg-coffee-50 transition-colors">Dashboard</a>
+                    <a href="{{ route('courses.index') }}" class="px-3 py-2 rounded-lg text-coffee-600 hover:text-coffee-800 hover:bg-coffee-50 transition-colors">Courses</a>
+                    
+                    @if(auth()->user()->role === 'Student')
+                        <a href="{{ route('registrations.index') }}" class="px-3 py-2 rounded-lg text-coffee-600 hover:text-coffee-800 hover:bg-coffee-50 transition-colors">My Registrations</a>
+                    @endif
+
+                    @if(auth()->user()->role === 'Administrator')
+                        <a href="{{ route('registrations.index') }}" class="px-3 py-2 rounded-lg text-coffee-600 hover:text-coffee-800 hover:bg-coffee-50 transition-colors">Registrations</a>
+                        <a href="{{ route('students.index') }}" class="px-3 py-2 rounded-lg text-coffee-600 hover:text-coffee-800 hover:bg-coffee-50 transition-colors">Students</a>
+                        <a href="{{ route('users.index') }}" class="px-3 py-2 rounded-lg text-coffee-600 hover:text-coffee-800 hover:bg-coffee-50 transition-colors">Users</a>
+                    @endif
+
+                    <div class="border-l border-coffee-200 pl-4 ml-3 flex items-center gap-3">
+                        <div class="flex items-center gap-2">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-coffee-500 to-coffee-700 text-white flex items-center justify-center text-xs font-bold shadow-soft">
+                                {{ strtoupper(substr(auth()->user()->name, 0, 1)) }}
+                            </div>
+                            <span class="font-semibold text-coffee-800 hidden sm:inline">{{ auth()->user()->name }}</span>
+                        </div>
+                        <form method="POST" action="{{ route('logout') }}">
+                            @csrf
+                            <button class="px-3 py-1.5 text-xs font-semibold rounded-lg text-accent-500 border border-coffee-200 hover:bg-accent-500 hover:text-white hover:border-accent-500 transition-all">
+                                Logout
+                            </button>
+                        </form>
+                    </div>
+                @endauth
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="app-main flex-grow w-full mx-auto px-6">
+        
+        <!-- Success Message -->
+        @if(session('success'))
+            <div class="flex items-start gap-3 bg-green-50 text-green-800 p-4 rounded-xl mb-6 text-sm border border-green-200 shadow-soft" role="alert">
+                <svg class="w-5 h-5 flex-shrink-0 mt-0.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span>{{ session('success') }}</span>
+            </div>
+        @endif
+
+        <!-- Error Message -->
+        @if(session('error'))
+            <div class="flex items-start gap-3 bg-red-50 text-red-800 p-4 rounded-xl mb-6 text-sm border border-red-200 shadow-soft" role="alert">
+                <svg class="w-5 h-5 flex-shrink-0 mt-0.5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span>{{ session('error') }}</span>
+            </div>
+        @endif
+
+        @yield('content')
+    </main>
+
+    <footer class="bg-white border-t border-coffee-200 py-5 text-center text-sm text-coffee-500">
+        &copy; {{ date('Y') }} Student Management System Â· All rights reserved.
+    </footer>
+
+</body>
+</html>
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\lecturer\dashboard.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell">
+    <header class="image-banner">
+        <div class="image-banner-copy">
+            <p class="text-sm font-bold uppercase tracking-wider text-amber-300">Teaching overview</p>
+            <h1>Welcome, {{ auth()->user()->name }}</h1>
+            <p>Review your assigned courses and the students registered in each one.</p>
+        </div>
+        <div class="image-banner-media">
+            <img src="https://images.pexels.com/photos/5212669/pexels-photo-5212669.jpeg?auto=compress&cs=tinysrgb&w=1100" alt="Students collaborating during a learning session" fetchpriority="high">
+        </div>
+    </header>
+
+    <section aria-labelledby="assigned-courses-title">
+        <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <h2 id="assigned-courses-title" class="text-xl font-bold text-coffee-800">My Assigned Courses</h2>
+                <p class="mt-1 text-sm text-coffee-500">Your course roster and current registration totals.</p>
+            </div>
+            <a href="{{ route('courses.index') }}" class="text-sm font-semibold text-accent-600 hover:text-coffee-800">View course catalog &rarr;</a>
+        </div>
+        <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+            @forelse($courses as $course)
+                <article class="surface-panel p-6">
+                    <p class="text-xs font-bold uppercase tracking-wider text-accent-600">{{ $course->code }}</p>
+                    <h3 class="mt-2 text-xl font-bold text-coffee-800">{{ $course->name }}</h3>
+                    <p class="mt-5 border-t border-coffee-100 pt-4 text-sm text-coffee-600">
+                        Students registered: <strong class="text-coffee-800">{{ $course->students->count() }}</strong>
+                    </p>
+                </article>
+            @empty
+                <div class="surface-panel p-8 md:col-span-2">
+                    <h3 class="text-lg font-bold text-coffee-800">No courses assigned yet</h3>
+                    <p class="mt-2 text-base text-coffee-500">Assigned courses will appear here with their current student registration totals.</p>
+                </div>
+            @endforelse
+        </div>
+    </section>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\registrations\create.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell max-w-2xl">
+    <header class="image-banner">
+        <div class="image-banner-copy">
+            <a href="{{ route('registrations.index') }}" class="text-sm font-semibold text-white/80 hover:text-white">&larr; Back to registrations</a>
+            <h1>Register for a Course</h1>
+            <p>Select the course you want to add to your current registrations.</p>
+        </div>
+        <div class="image-banner-media">
+            <img src="https://images.pexels.com/photos/5212669/pexels-photo-5212669.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Students reviewing their course materials" fetchpriority="high">
+        </div>
+    </header>
+    <div class="surface-panel p-6 sm:p-8">
+    <form action="{{ route('registrations.store') }}" method="POST" class="space-y-5">
+        @csrf
+        @if($canManageRegistrations)
+        <div>
+            <label for="user_id" class="form-label">Student</label>
+            <select id="user_id" name="user_id" required class="form-control">
+                <option value="">-- Select Student --</option>
+                @foreach($students as $student)
+                    <option value="{{ $student->id }}" {{ old('user_id') == $student->id ? 'selected' : '' }}>{{ $student->name }} ({{ $student->email }})</option>
+                @endforeach
+            </select>
+            @error('user_id') <span class="mt-1 block text-sm text-red-700">{{ $message }}</span> @enderror
+        </div>
+        @endif
+        <div>
+            <label for="course_id" class="form-label">Select a Course</label>
+            <select id="course_id" name="course_id" required class="form-control">
+                <option value="">-- Choose Course --</option>
+                @foreach($courses as $course)
+                    <option value="{{ $course->id }}" {{ old('course_id') == $course->id ? 'selected' : '' }}>{{ $course->name }} ({{ $course->code }})</option>
+                @endforeach
+            </select>
+            @error('course_id') <span class="mt-1 block text-sm text-red-700">{{ $message }}</span> @enderror
+        </div>
+        <div class="flex flex-col-reverse gap-3 border-t border-coffee-100 pt-5 sm:flex-row sm:justify-end">
+            <a href="{{ route('registrations.index') }}" class="btn-secondary">Cancel</a>
+            <button type="submit" class="btn-primary">Confirm Registration</button>
+        </div>
+    </form>
+    </div>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\registrations\index.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell">
+<header class="image-banner">
+    <div class="image-banner-copy">
+        <p class="text-sm font-bold uppercase tracking-wider text-amber-300">My study plan</p>
+        <h1>My Course Registrations</h1>
+        <p>Review the courses currently on your schedule or register for another available course.</p>
+        <a href="{{ route('registrations.create') }}" class="btn-secondary mt-5 border-white/50 bg-white/10 text-white hover:bg-white/20 hover:text-white">Register for a Course</a>
+    </div>
+    <div class="image-banner-media">
+        <img src="https://images.pexels.com/photos/267885/pexels-photo-267885.jpeg?auto=compress&cs=tinysrgb&w=1100" alt="Graduates celebrating the completion of their studies" fetchpriority="high">
+    </div>
+</header>
+
+<div class="table-scroll">
+    <table class="data-table">
+        <caption class="sr-only">Courses registered to your account</caption>
+        <thead>
+            <tr>
+                @if($canManageRegistrations)
+                    <th scope="col">Student</th>
+                @endif
+                <th scope="col">Course Name</th>
+                <th scope="col">Course Code</th>
+                <th scope="col">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @forelse($registrations as $reg)
+            <tr>
+                @if($canManageRegistrations)
+                    <td>
+                        <span class="font-semibold text-coffee-800">{{ $reg->user->name }}</span>
+                        <span class="block text-sm text-coffee-500">{{ $reg->user->email }}</span>
+                    </td>
+                @endif
+                <td class="font-semibold text-coffee-800">{{ $reg->course->name }}</td>
+                <td>{{ $reg->course->code }}</td>
+                <td>
+                    <form action="{{ route('registrations.destroy', $reg->id) }}" method="POST" onsubmit="return confirm('Drop this course?');">
+                        @csrf @method('DELETE')
+                        <button type="submit" class="text-sm font-semibold text-red-700 hover:text-red-900 hover:underline">Drop Course</button>
+                    </form>
+                </td>
+            </tr>
+            @empty
+            <tr>
+                <td colspan="{{ $canManageRegistrations ? 4 : 3 }}" class="py-12 text-center">
+                    <p class="font-semibold text-coffee-800">No course registrations yet</p>
+                    <p class="mt-1 text-sm text-coffee-500">Choose an available course to get started.</p>
+                    <a href="{{ route('registrations.create') }}" class="btn-primary mt-4">Find a Course</a>
+                </td>
+            </tr>
+            @endforelse
+        </tbody>
+    </table>
+</div>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\students\create.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell max-w-2xl">
+    
+    <div class="mb-6">
+        <a href="{{ route('students.index') }}" class="inline-flex items-center text-sm font-semibold text-coffee-600 hover:text-coffee-800 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            Back to Students
+        </a>
+    </div>
+
+    <div class="surface-panel overflow-hidden">
+        
+        <!-- Form Header -->
+        <div class="grid border-b border-coffee-100 bg-coffee-50 md:grid-cols-[1fr_14rem]">
+            <div class="self-center px-6 py-5">
+                <h1 class="text-2xl font-bold text-coffee-800">Add New Student</h1>
+                <p class="text-base text-coffee-600 mt-2">Create a student account and provide the information needed to access the portal.</p>
+            </div>
+            <div class="h-36 overflow-hidden md:h-full">
+                <img src="https://images.pexels.com/photos/1181244/pexels-photo-1181244.jpeg?auto=compress&cs=tinysrgb&w=900" alt="A student working on a laptop" class="h-full w-full object-cover">
+            </div>
+        </div>
+
+        <!-- Form Body -->
+        <div class="p-6 sm:p-8">
+            <form action="{{ route('students.store') }}" method="POST" class="space-y-5" aria-label="New student details">
+                @csrf
+                
+                <div>
+                    <label for="name" class="form-label">Full Name <span class="text-accent-600">*</span></label>
+                    <input type="text" id="name" name="name" value="{{ old('name') }}" required placeholder="e.g. Aisha Namuli" 
+                           class="form-control">
+                    @error('name') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                </div>
+
+                <div>
+                    <label for="email" class="form-label">Email Address <span class="text-accent-600">*</span></label>
+                    <input type="email" id="email" name="email" value="{{ old('email') }}" required placeholder="student@example.com" 
+                           class="form-control">
+                    @error('email') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                </div>
+
+                <div>
+                    <label for="password" class="form-label">Temporary Password <span class="text-accent-600">*</span></label>
+                    <input type="password" id="password" name="password" required minlength="8" placeholder="Minimum 8 characters"
+                           class="form-control">
+                    @error('password') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                </div>
+
+                <!-- Form Actions -->
+                <div class="pt-4 flex flex-col-reverse gap-3 border-t border-coffee-100 mt-6 sm:flex-row sm:items-center sm:justify-end">
+                    <a href="{{ route('students.index') }}" class="btn-secondary">
+                        Cancel
+                    </a>
+                    <button type="submit" class="btn-primary">
+                        Save Student
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\students\edit.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell max-w-2xl">
+    <header class="image-banner">
+        <div class="image-banner-copy">
+            <a href="{{ route('students.index') }}" class="text-sm font-semibold text-white/80 hover:text-white">&larr; Back to students</a>
+            <h1>Edit Student</h1>
+            <p>Update this student's name and email address.</p>
+        </div>
+        <div class="image-banner-media">
+            <img src="https://images.pexels.com/photos/3184325/pexels-photo-3184325.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Students and staff working together" fetchpriority="high">
+        </div>
+    </header>
+    <div class="surface-panel p-6 sm:p-8">
+    <form action="{{ route('students.update', $student->id) }}" method="POST" class="space-y-5">
+        @csrf @method('PUT')
+        <div>
+            <label for="name" class="form-label">Name</label>
+            <input type="text" id="name" name="name" value="{{ old('name', $student->name) }}" required class="form-control">
+        </div>
+        <div>
+            <label for="email" class="form-label">Email</label>
+            <input type="email" id="email" name="email" value="{{ old('email', $student->email) }}" required class="form-control">
+        </div>
+        <div class="flex flex-col-reverse gap-3 border-t border-coffee-100 pt-5 sm:flex-row sm:justify-end">
+            <a href="{{ route('students.index') }}" class="btn-secondary">Cancel</a>
+            <button type="submit" class="btn-primary">Update Student</button>
+        </div>
+    </form>
+    </div>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\students\index.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell">
+<header class="image-banner">
+    <div class="image-banner-copy">
+        <p class="text-sm font-bold uppercase tracking-wider text-amber-300">Student directory</p>
+        <h1>Manage Students</h1>
+        <p>Review student accounts and update their contact details.</p>
+        <a href="{{ route('students.create') }}" class="btn-secondary mt-5 border-white/50 bg-white/10 text-white hover:bg-white/20 hover:text-white">Add Student</a>
+    </div>
+    <div class="image-banner-media">
+        <img src="https://images.pexels.com/photos/267885/pexels-photo-267885.jpeg?auto=compress&cs=tinysrgb&w=1100" alt="Graduates gathered on campus" fetchpriority="high">
+    </div>
+</header>
+
+<div class="table-scroll">
+    <table class="data-table">
+        <caption class="sr-only">Student accounts</caption>
+        <thead>
+            <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Email</th>
+                <th scope="col">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @forelse($students as $student)
+                <tr>
+                    <td class="font-semibold text-coffee-800">{{ $student->name }}</td>
+                    <td>{{ $student->email }}</td>
+                    <td>
+                        <div class="flex items-center gap-4">
+                            <a href="{{ route('students.edit', $student->id) }}" class="font-semibold text-accent-600 hover:text-coffee-800 hover:underline">Edit</a>
+                            <form action="{{ route('students.destroy', $student->id) }}" method="POST" onsubmit="return confirm('Delete student?');">
+                                @csrf @method('DELETE')
+                                <button type="submit" class="font-semibold text-red-700 hover:text-red-900 hover:underline">Delete</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="3" class="py-12 text-center">
+                        <p class="font-semibold text-coffee-800">No student accounts found</p>
+                        <p class="mt-1 text-sm text-coffee-500">Add a student to start building the student directory.</p>
+                        <a href="{{ route('students.create') }}" class="btn-primary mt-4">Add Student</a>
+                    </td>
+                </tr>
+            @endforelse
+        </tbody>
+    </table>
+</div>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\users\index.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell">
+<header class="image-banner">
+    <div class="image-banner-copy">
+        <p class="text-sm font-bold uppercase tracking-wider text-amber-300">Account access</p>
+        <h1>Manage User Roles</h1>
+        <p>Review accounts, check approval status, and assign access levels.</p>
+        <a href="{{ route('users.pending') }}" class="btn-secondary mt-5 border-white/50 bg-white/10 text-white hover:bg-white/20 hover:text-white">Pending Approvals</a>
+    </div>
+    <div class="image-banner-media">
+        <img src="https://images.pexels.com/photos/1181244/pexels-photo-1181244.jpeg?auto=compress&cs=tinysrgb&w=1100" alt="Working together at a laptop on campus" fetchpriority="high">
+    </div>
+</header>
+
+<div class="table-scroll">
+    <table class="data-table">
+        <caption class="sr-only">Portal users and assigned roles</caption>
+        <thead>
+            <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Email</th>
+                <th scope="col">Current Role</th>
+                <th scope="col">Change Role</th>
+            </tr>
+        </thead>
+        <tbody>
+            @forelse($users as $user)
+            <tr>
+                <td class="font-semibold text-coffee-800">{{ $user->name }}</td>
+                <td>{{ $user->email }}</td>
+                <td>
+                    <span class="inline-flex rounded-full bg-coffee-50 px-3 py-1 text-xs font-semibold text-coffee-700">{{ $user->role }}</span>
+                    @if(!$user->is_approved && in_array($user->role, ['Lecturer', 'Administrator']))
+                        <span class="ml-1 inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">Pending</span>
+                    @endif
+                </td>
+                <td>
+                    <form action="{{ route('users.update', $user->id) }}" method="POST" class="flex min-w-64 items-center gap-2">
+                        @csrf @method('PUT')
+                        <label for="role-{{ $user->id }}" class="sr-only">Role for {{ $user->name }}</label>
+                        <select id="role-{{ $user->id }}" name="role" class="form-control min-h-10 py-2">
+                            <option value="Student" {{ $user->role == 'Student' ? 'selected' : '' }}>Student</option>
+                            <option value="Lecturer" {{ $user->role == 'Lecturer' ? 'selected' : '' }}>Lecturer</option>
+                            <option value="Administrator" {{ $user->role == 'Administrator' ? 'selected' : '' }}>Administrator</option>
+                        </select>
+                        <button type="submit" class="btn-primary min-h-10 px-3 py-2 text-sm">Update</button>
+                    </form>
+                </td>
+            </tr>
+            @empty
+            <tr>
+                <td colspan="4" class="py-12 text-center">
+                    <p class="font-semibold text-coffee-800">No user accounts found</p>
+                    <p class="mt-1 text-sm text-coffee-500">Registered portal accounts will appear here.</p>
+                </td>
+            </tr>
+            @endforelse
+        </tbody>
+    </table>
+</div>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\resources\views\users\pending.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<div class="page-shell">
+<header class="image-banner">
+    <div class="image-banner-copy">
+        <p class="text-sm font-bold uppercase tracking-wider text-amber-300">Account access</p>
+        <h1>Pending Approvals</h1>
+        <p>Approve lecturer and administrator accounts before they can access the system.</p>
+        <a href="{{ route('users.index') }}" class="btn-secondary mt-5 border-white/50 bg-white/10 text-white hover:bg-white/20 hover:text-white">&larr; Back to users</a>
+    </div>
+    <div class="image-banner-media">
+        <img src="https://images.pexels.com/photos/3184325/pexels-photo-3184325.jpeg?auto=compress&cs=tinysrgb&w=1100" alt="Colleagues reviewing information together" fetchpriority="high">
+    </div>
+</header>
+
+<!-- Pending Users List -->
+<div class="space-y-4">
+    @forelse($users as $user)
+        <article class="surface-panel flex flex-col justify-between gap-4 p-5 sm:flex-row sm:items-center sm:p-6">
+            
+            <!-- User Info -->
+            <div class="flex items-start gap-4">
+                <!-- Avatar Initial -->
+                <div class="h-12 w-12 rounded-full bg-coffee-50 border border-coffee-100 flex items-center justify-center text-coffee-700 font-bold text-lg shrink-0" aria-hidden="true">
+                    {{ strtoupper(substr($user->name, 0, 1)) }}
+                </div>
+                
+                <div>
+                    <h2 class="font-bold text-coffee-800 text-lg">{{ $user->name }}</h2>
+                    <p class="text-base text-coffee-500">{{ $user->email }}</p>
+                    
+                    <div class="flex items-center gap-2 mt-2">
+                        <!-- Role Badge -->
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-coffee-50 text-coffee-700">
+                            {{ $user->role }}
+                        </span>
+                        <!-- Time Badge -->
+                        <span class="text-sm text-coffee-500">
+                            Requested {{ $user->created_at->diffForHumans() }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center gap-2 sm:shrink-0">
+                <form method="POST" action="{{ route('users.approve', $user) }}">
+                    @csrf
+                    <button type="submit" class="btn-primary w-full sm:w-auto">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        Approve
+                    </button>
+                </form>
+            </div>
+
+        </article>
+    @empty
+        <!-- Empty State -->
+        <div class="surface-panel p-8 text-center sm:p-12">
+            <div class="flex justify-center mb-4">
+                <div class="h-16 w-16 rounded-full bg-coffee-50 flex items-center justify-center text-coffee-400">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                </div>
+            </div>
+            <h2 class="text-lg font-bold text-coffee-800 mb-1">No pending approvals</h2>
+            <p class="text-base text-coffee-500">You're all caught up. New requests will appear here.</p>
+        </div>
+    @endforelse
+</div>
+</div>
+@endsection
+
+===== C:\Users\HP\Desktop\student-management-system-main\routes\console.php =====
+
+<?php
+
+use Illuminate\Foundation\Inspiring;
+use Illuminate\Support\Facades\Artisan;
+
+Artisan::command('inspire', function () {
+    $this->comment(Inspiring::quote());
+})->purpose('Display an inspiring quote');
+
+===== C:\Users\HP\Desktop\student-management-system-main\routes\web.php =====
+
+<?php
+
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CourseController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\LecturerController;
+use App\Http\Controllers\RegistrationController;
+use App\Http\Controllers\StudentController;
+use App\Http\Controllers\UserController;
+use Illuminate\Support\Facades\Route;
+
+// Public routes
+Route::get('/', function () {
+    return view('welcome');
+})->name('home');
+Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
+Route::post('/login', [AuthController::class, 'login'])->name('login.store');
+Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
+Route::post('/register', [AuthController::class, 'register'])->name('register.store');
+
+// General routes
+Route::post('/logout', [AuthController::class, 'logout'])->name('logout')->middleware('auth');
+Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard')->middleware(['auth', 'approved']);
+
+// Pending Approval Route
+Route::get('/pending-approval', function () {
+    return view('auth.pending-approval');
+})->name('pending.approval')->middleware('auth');
+
+// Courses
+Route::get('/courses', [CourseController::class, 'index'])->name('courses.index')->middleware(['auth', 'approved', 'permission:view courses']);
+Route::get('/courses/{course}', [CourseController::class, 'show'])->name('courses.show')->middleware(['auth', 'approved', 'permission:view courses']);
+
+// Registrations
+Route::get('/registrations', [RegistrationController::class, 'index'])->name('registrations.index')->middleware(['auth', 'approved', 'permission:view own registrations|manage registrations']);
+Route::get('/registrations/create', [RegistrationController::class, 'create'])->name('registrations.create')->middleware(['auth', 'approved', 'permission:register courses|manage registrations']);
+Route::post('/registrations', [RegistrationController::class, 'store'])->name('registrations.store')->middleware(['auth', 'approved', 'permission:register courses|manage registrations']);
+Route::delete('/registrations/{registration}', [RegistrationController::class, 'destroy'])->name('registrations.destroy')->middleware(['auth', 'approved', 'permission:register courses|manage registrations']);
+
+// Lecturer (Added 'approved' middleware)
+Route::get('/lecturer/dashboard', [LecturerController::class, 'index'])->name('lecturer.dashboard')->middleware(['auth', 'approved', 'permission:view assigned courses']);
+
+// Admin - Students (Added 'approved' middleware)
+Route::get('/students', [StudentController::class, 'index'])->name('students.index')->middleware(['auth', 'approved', 'permission:manage students']);
+Route::get('/students/create', [StudentController::class, 'create'])->name('students.create')->middleware(['auth', 'approved', 'permission:manage students']);
+Route::post('/students', [StudentController::class, 'store'])->name('students.store')->middleware(['auth', 'approved', 'permission:manage students']);
+Route::get('/students/{student}/edit', [StudentController::class, 'edit'])->name('students.edit')->middleware(['auth', 'approved', 'permission:manage students']);
+Route::put('/students/{student}', [StudentController::class, 'update'])->name('students.update')->middleware(['auth', 'approved', 'permission:manage students']);
+Route::delete('/students/{student}', [StudentController::class, 'destroy'])->name('students.destroy')->middleware(['auth', 'approved', 'permission:manage students']);
+
+// Admin - Courses (Added 'approveddd  middleware)
+Route::get('/courses/create', [CourseController::class, 'create'])->name('courses.create')->middleware(['auth', 'approved', 'permission:manage courses']);
+Route::post('/courses', [CourseController::class, 'store'])->name('courses.store')->middleware(['auth', 'approved', 'permission:manage courses']);
+Route::get('/courses/{course}/edit', [CourseController::class, 'edit'])->name('courses.edit')->middleware(['auth', 'approved', 'permission:manage courses']);
+Route::put('/courses/{course}', [CourseController::class, 'update'])->name('courses.update')->middleware(['auth', 'approved', 'permission:manage courses']);
+Route::delete('/courses/{course}', [CourseController::class, 'destroy'])->name('courses.destroy')->middleware(['auth', 'approved', 'permission:manage courses']);
+
+// Admin - Users (Added 'approved' middleware + Pending/Approve routes)
+Route::get('/users', [UserController::class, 'index'])->name('users.index')->middleware(['auth', 'approved', 'permission:manage users']);
+Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update')->middleware(['auth', 'approved', 'permission:manage users']);
+
+// Admin - Pending Users (New routes for approving accounts)
+Route::get('/pending-users', [UserController::class, 'pending'])->name('users.pending')->middleware(['auth', 'approved', 'permission:manage users']);
+Route::post('/pending-users/{user}/approve', [UserController::class, 'approve'])->name('users.approve')->middleware(['auth', 'approved', 'permission:manage users']);
