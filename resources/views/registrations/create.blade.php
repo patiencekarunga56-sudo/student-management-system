@@ -1,23 +1,47 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="max-w-lg mx-auto bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-    <h1 class="text-xl font-bold mb-4">Register for a Course</h1>
-    <form action="{{ route('registrations.store') }}" method="POST">
+<div class="page-shell max-w-2xl">
+    <header class="image-banner">
+        <div class="image-banner-copy">
+            <a href="{{ route('registrations.index') }}" class="text-sm font-semibold text-white/80 hover:text-white">&larr; Back to registrations</a>
+            <h1>Register for a Course</h1>
+            <p>Select the course you want to add to your current registrations.</p>
+        </div>
+        <div class="image-banner-media">
+            <img src="https://images.pexels.com/photos/5212669/pexels-photo-5212669.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Students reviewing their course materials" fetchpriority="high">
+        </div>
+    </header>
+    <div class="surface-panel p-6 sm:p-8">
+    <form action="{{ route('registrations.store') }}" method="POST" class="space-y-5">
         @csrf
-        <div class="mb-6">
-            <label class="block text-sm font-medium mb-2">Select a Course</label>
-            <select name="course_id" required class="w-full border p-2 rounded">
-                <option value="">-- Choose Course --</option>
-                @foreach($courses as $course)
-                    <option value="{{ $course->id }}">{{ $course->name }} ({{ $course->code }})</option>
+        @if($canManageRegistrations)
+        <div>
+            <label for="user_id" class="form-label">Student</label>
+            <select id="user_id" name="user_id" required class="form-control">
+                <option value="">-- Select Student --</option>
+                @foreach($students as $student)
+                    <option value="{{ $student->id }}" {{ old('user_id') == $student->id ? 'selected' : '' }}>{{ $student->name }} ({{ $student->email }})</option>
                 @endforeach
             </select>
+            @error('user_id') <span class="mt-1 block text-sm text-red-700">{{ $message }}</span> @enderror
         </div>
-        <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Confirm Registration</button>
-        <div class="text-center mt-4">
-            <a href="{{ route('registrations.index') }}" class="text-sm text-gray-500 hover:underline">Cancel</a>
+        @endif
+        <div>
+            <label for="course_id" class="form-label">Select a Course</label>
+            <select id="course_id" name="course_id" required class="form-control">
+                <option value="">-- Choose Course --</option>
+                @foreach($courses as $course)
+                    <option value="{{ $course->id }}" {{ old('course_id') == $course->id ? 'selected' : '' }}>{{ $course->name }} ({{ $course->code }})</option>
+                @endforeach
+            </select>
+            @error('course_id') <span class="mt-1 block text-sm text-red-700">{{ $message }}</span> @enderror
+        </div>
+        <div class="flex flex-col-reverse gap-3 border-t border-coffee-100 pt-5 sm:flex-row sm:justify-end">
+            <a href="{{ route('registrations.index') }}" class="btn-secondary">Cancel</a>
+            <button type="submit" class="btn-primary">Confirm Registration</button>
         </div>
     </form>
+    </div>
 </div>
 @endsection

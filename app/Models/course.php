@@ -26,6 +26,6 @@ class Course extends Model
     // A course belongs to many students through registrations
     public function students()
     {
-        return $this->belongsToMany(User::class, 'registrations');
+        return $this->belongsToMany(User::class, 'registrations')->withTimestamps();
     }
 }

@@ -1,8 +1,11 @@
 <?php
 
+use App\Http\Middleware\EnsureUserIsApproved;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Spatie\Permission\Middleware\PermissionMiddleware;
+use Spatie\Permission\Middleware\RoleMiddleware;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -13,8 +16,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // This registers your custom role and approval middlewares
         $middleware->alias([
-            'role' => \App\Http\Middleware\RoleMiddleware::class,
-            'approved' => \App\Http\Middleware\EnsureUserIsApproved::class, // <-- Added this line
+            'role' => RoleMiddleware::class,
+            'permission' => PermissionMiddleware::class,
+            'approved' => EnsureUserIsApproved::class, // <-- Added this line
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

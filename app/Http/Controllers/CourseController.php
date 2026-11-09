@@ -14,19 +14,27 @@ class CourseController extends Controller implements HasMiddleware
     {
         return [
             new Middleware('auth'),
-            new Middleware('role:Administrator', except: ['index', 'show']),
+            new Middleware('permission:manage courses', except: ['index', 'show']),
         ];
     }
 
     public function index()
     {
-        $courses = Course::with('lecturer')->get();
+        $coursesQuery = Course::with('lecturer');
+
+        if (auth()->user()->hasRole('Lecturer')) {
+            $coursesQuery->where('lecturer_id', auth()->id());
+        }
+
+        $courses = $coursesQuery->get();
+
         return view('courses.index', compact('courses'));
     }
 
     public function create()
     {
         $lecturers = User::where('role', 'Lecturer')->get();
+
         return view('courses.create', compact('lecturers'));
     }
 
@@ -35,7 +43,7 @@ class CourseController extends Controller implements HasMiddleware
         $request->validate([
             'name' => 'required|string|max:255',
             'code' => 'required|string|unique:courses',
-            'lecturer_id' => 'nullable|exists:users,id'
+            'lecturer_id' => 'nullable|exists:users,id',
         ]);
 
         Course::create($request->all());
@@ -45,13 +53,29 @@ class CourseController extends Controller implements HasMiddleware
 
     public function show(Course $course)
     {
-        $course->load('lecturer', 'students');
-        return view('courses.show', compact('course'));
+        $user = auth()->user();
+        $isAssignedLecturer = $user->hasRole('Lecturer')
+            && (int) $course->lecturer_id === (int) $user->getKey();
+
+        if ($user->hasRole('Lecturer') && ! $isAssignedLecturer) {
+            abort(403, 'You can only view rosters for your assigned courses.');
+        }
+
+        $canViewRoster = $user->hasRole('Administrator') || $isAssignedLecturer;
+
+        $course->load('lecturer');
+
+        if ($canViewRoster) {
+            $course->load('students');
+        }
+
+        return view('courses.show', compact('course', 'canViewRoster'));
     }
 
     public function edit(Course $course)
     {
         $lecturers = User::where('role', 'Lecturer')->get();
+
         return view('courses.edit', compact('course', 'lecturers'));
     }
 
@@ -59,8 +83,8 @@ class CourseController extends Controller implements HasMiddleware
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'code' => 'required|string|unique:courses,code,' . $course->id,
-            'lecturer_id' => 'nullable|exists:users,id'
+            'code' => 'required|string|unique:courses,code,'.$course->id,
+            'lecturer_id' => 'nullable|exists:users,id',
         ]);
 
         $course->update($request->all());
@@ -71,6 +95,7 @@ class CourseController extends Controller implements HasMiddleware
     public function destroy(Course $course)
     {
         $course->delete();
+
         return redirect()->route('courses.index')->with('success', 'Course deleted successfully.');
     }
 }

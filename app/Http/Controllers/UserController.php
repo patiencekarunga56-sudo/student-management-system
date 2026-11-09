@@ -21,6 +21,7 @@ class UserController extends Controller implements HasMiddleware
     public function index()
     {
         $users = User::all();
+
         return view('users.index', compact('users'));
     }
 
@@ -49,16 +50,19 @@ class UserController extends Controller implements HasMiddleware
     public function update(Request $request, User $user)
     {
         $request->validate([
-            'role' => 'required|in:Administrator,Lecturer,Student'
+            'role' => 'required|in:Administrator,Lecturer,Student',
         ]);
 
-        // If the role is changed to Lecturer or Admin, hold them for approval again
+        $roleChanged = $user->role !== $request->role;
         $requiresApproval = in_array($request->role, ['Administrator', 'Lecturer']);
-        
+        $requiresNewApproval = $roleChanged && $requiresApproval;
+
         $user->update([
             'role' => $request->role,
-            'is_approved' => !$requiresApproval ? true : $user->is_approved, 
+            'is_approved' => $requiresNewApproval ? false : ($requiresApproval ? $user->is_approved : true),
+            'approved_at' => $requiresNewApproval ? null : $user->approved_at,
         ]);
+        $user->syncRoles($request->role);
 
         return back()->with('success', 'User role updated successfully.');
     }
