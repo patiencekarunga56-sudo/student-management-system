@@ -1,62 +1,85 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-    
+<div class="page-shell max-w-4xl">
+
     <!-- Back Button -->
     <div class="mb-6">
-        <a href="{{ route('courses.index') }}" class="inline-flex items-center text-sm font-semibold text-brand-600 hover:text-brand-800 transition">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-            Back to Courses
+        <a href="{{ route('courses.index') }}" class="inline-flex items-center gap-2 text-sm font-semibold text-brand-600 hover:text-brand-800">
+            <i data-lucide="arrow-left" class="w-4 h-4"></i> Back to Courses
         </a>
     </div>
 
     <!-- Course Header Card -->
-    <div class="bg-white rounded-2xl border border-brand-100 shadow-sm overflow-hidden mb-8">
-        <div class="bg-brand-800 p-8 text-white">
-            <span class="inline-block px-3 py-1 rounded-md bg-white/20 text-white text-xs font-bold uppercase tracking-wider mb-4">
-                {{ $course->code }}
-            </span>
-            <h1 class="text-3xl font-bold mb-3">{{ $course->name }}</h1>
-            
-            <div class="flex items-center gap-2 text-brand-100 text-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                Lecturer: <strong class="text-white">{{ $course->lecturer ? $course->lecturer->name : 'Not Assigned' }}</strong>
+    <article class="surface-panel overflow-hidden mb-8">
+        <div class="image-banner image-banner--contained">
+            <div class="image-banner-copy">
+                <p class="text-sm font-bold uppercase tracking-wider text-gold-400">Course details</p>
+                <span class="mt-3 inline-block rounded-md bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white">
+                    {{ $course->code }}
+                </span>
+                <h1>{{ $course->name }}</h1>
+                <div class="mt-4 flex items-center gap-2 text-base text-white/85">
+                    <i data-lucide="user-round" class="w-4 h-4"></i>
+                    Lecturer: <strong class="text-white">{{ $course->lecturer ? $course->lecturer->name : 'Not Assigned' }}</strong>
+                </div>
+            </div>
+            <div class="image-banner-media">
+                <img src="https://images.pexels.com/photos/5212669/pexels-photo-5212669.jpeg?auto=compress&cs=tinysrgb&w=1100" alt="Students working together in a classroom" fetchpriority="high">
             </div>
         </div>
 
+        @if($canViewRoster)
         <!-- Registered Students Section -->
-        <div class="p-8">
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-lg font-bold text-brand-800">Registered Students</h2>
-                <span class="bg-brand-50 text-brand-700 py-1 px-3 rounded-full text-sm font-bold border border-brand-100">
+        <div class="p-5 sm:p-8">
+            <div class="mb-6 flex items-center justify-between">
+                <div>
+                    <h2 class="text-xl font-bold text-brand-800">Registered Students</h2>
+                    <p class="mt-1 text-sm text-slate-600">Students currently enrolled in this course.</p>
+                </div>
+                <span class="rounded-full border border-brand-100 bg-brand-50 px-3 py-1 text-sm font-bold text-brand-700">
                     {{ $course->students->count() }} Enrolled
                 </span>
             </div>
 
-            <div class="bg-brand-50/50 rounded-xl border border-brand-100 overflow-hidden">
+            <div class="overflow-hidden rounded-xl border border-brand-100 bg-brand-50/50">
                 <ul class="divide-y divide-brand-100">
                     @forelse($course->students as $student)
-                        <li class="p-4 flex items-center gap-4 hover:bg-white transition-colors">
+                        <li class="flex items-center gap-4 p-4 transition-colors hover:bg-white">
                             <!-- Student Avatar Initial -->
-                            <div class="w-10 h-10 rounded-full bg-brand-200 text-brand-800 flex items-center justify-center font-bold text-sm shrink-0">
-                                {{ substr($student->name, 0, 1) }}
+                            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white" aria-hidden="true">
+                                {{ strtoupper(substr($student->name, 0, 1)) }}
                             </div>
                             <div>
-                                <p class="text-sm font-semibold text-brand-800">{{ $student->name }}</p>
-                                <p class="text-xs text-slate-500">{{ $student->email }}</p>
+                                <p class="text-base font-semibold text-brand-800">{{ $student->name }}</p>
+                                <p class="text-sm text-slate-500">{{ $student->email }}</p>
                             </div>
                         </li>
                     @empty
-                        <li class="p-8 text-center flex flex-col items-center justify-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-brand-300 mb-3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                            <p class="text-slate-500 text-sm">No students have registered for this course yet.</p>
+                        <li class="flex flex-col items-center justify-center p-8 text-center">
+                            <span class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white text-brand-500" aria-hidden="true">
+                                <i data-lucide="users" class="w-6 h-6"></i>
+                            </span>
+                            <p class="text-base text-slate-600">No students have registered for this course yet.</p>
                         </li>
                     @endforelse
                 </ul>
             </div>
         </div>
-    </div>
-    
+        @else
+            <div class="p-5 sm:p-8">
+                <div class="flex items-start gap-4 rounded-xl border border-brand-100 bg-brand-50/60 p-5">
+                    <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gold-400/20 text-gold-600" aria-hidden="true">
+                        <i data-lucide="info" class="w-5 h-5"></i>
+                    </span>
+                    <div>
+                        <h2 class="text-lg font-bold text-brand-800">Course overview</h2>
+                        <p class="mt-1 text-base text-slate-600">Contact the assigned lecturer for course-specific information.</p>
+                    </div>
+                </div>
+            </div>
+        @endif
+    </article>
+
 </div>
 @endsection

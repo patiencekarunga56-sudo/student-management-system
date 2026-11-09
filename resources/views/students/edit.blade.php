@@ -1,20 +1,33 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="max-w-lg mx-auto bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-    <h1 class="text-xl font-bold mb-4">Edit Student</h1>
-    <form action="{{ route('students.update', $student->id) }}" method="POST">
+<div class="page-shell max-w-2xl">
+    <header class="image-banner">
+        <div class="image-banner-copy">
+            <a href="{{ route('students.index') }}" class="text-sm font-semibold text-white/80 hover:text-white">&larr; Back to students</a>
+            <h1>Edit Student</h1>
+            <p>Update this student's name and email address.</p>
+        </div>
+        <div class="image-banner-media">
+            <img src="https://images.pexels.com/photos/3184325/pexels-photo-3184325.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Students and staff working together" fetchpriority="high">
+        </div>
+    </header>
+    <div class="surface-panel p-6 sm:p-8">
+    <form action="{{ route('students.update', $student->id) }}" method="POST" class="space-y-5">
         @csrf @method('PUT')
-        <div class="mb-4">
-            <label class="block text-sm font-medium mb-1">Name</label>
-            <input type="text" name="name" value="{{ $student->name }}" required class="w-full border p-2 rounded">
+        <div>
+            <label for="name" class="form-label">Name</label>
+            <input type="text" id="name" name="name" value="{{ old('name', $student->name) }}" required class="form-control">
         </div>
-        <div class="mb-4">
-            <label class="block text-sm font-medium mb-1">Email</label>
-            <input type="email" name="email" value="{{ $student->email }}" required class="w-full border p-2 rounded">
+        <div>
+            <label for="email" class="form-label">Email</label>
+            <input type="email" id="email" name="email" value="{{ old('email', $student->email) }}" required class="form-control">
         </div>
-        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Update Student</button>
-        <a href="{{ route('students.index') }}" class="ml-2 text-gray-500 hover:underline">Cancel</a>
+        <div class="flex flex-col-reverse gap-3 border-t border-coffee-100 pt-5 sm:flex-row sm:justify-end">
+            <a href="{{ route('students.index') }}" class="btn-secondary">Cancel</a>
+            <button type="submit" class="btn-primary">Update Student</button>
+        </div>
     </form>
+    </div>
 </div>
 @endsection

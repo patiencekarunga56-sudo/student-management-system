@@ -1,72 +1,85 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-    
+<div class="page-shell">
+
     <!-- Page Header -->
-    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
-        <div>
-            <h1 class="text-2xl font-bold text-brand-800">Available Courses</h1>
-            <p class="text-sm text-slate-500 mt-1">Browse the catalog of courses offered this semester.</p>
+    <header class="image-banner">
+        <div class="image-banner-copy">
+            <p class="text-sm font-bold uppercase tracking-wider text-gold-400">Course catalog</p>
+            <h1>Available Courses</h1>
+            <p>Browse course details, find your lecturer, and explore the classes offered this semester.</p>
+            @can('manage courses')
+                <a href="{{ route('courses.create') }}" class="btn-secondary mt-5 border-white/50 bg-white/10 text-white hover:bg-white/20 hover:text-white">
+                    <i data-lucide="plus" class="w-4 h-4 mr-2"></i> Add a course
+                </a>
+            @endcan
         </div>
-        
-        @if(auth()->user()->role === 'Administrator')
-            <a href="{{ route('courses.create') }}" class="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-lg shadow-sm hover:bg-brand-700 transition-colors text-sm font-semibold">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                Add Course
-            </a>
-        @endif
+        <div class="image-banner-media">
+            <img src="https://images.pexels.com/photos/267885/pexels-photo-267885.jpeg?auto=compress&cs=tinysrgb&w=1200" alt="A university library and study space" fetchpriority="high">
+        </div>
+    </header>
+
+    <div class="mb-5 flex items-center justify-between">
+        <h2 class="text-xl font-bold text-brand-800">All courses</h2>
+        <span class="rounded-full border border-brand-100 bg-white px-3 py-1 text-sm font-semibold text-brand-700">{{ $courses->count() }} {{ \Illuminate\Support\Str::plural('course', $courses->count()) }}</span>
     </div>
 
     <!-- Courses Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <section aria-label="Course catalog" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         @forelse($courses as $course)
-            <div class="bg-white p-6 rounded-xl border border-brand-100 shadow-sm hover:shadow-md transition-shadow flex flex-col h-full">
-                
+            <article class="surface-panel group flex h-full flex-col p-6 hover:-translate-y-1 hover:shadow-card">
+
                 <!-- Card Header -->
                 <div class="mb-4">
-                    <span class="inline-block px-2.5 py-1 rounded-md bg-brand-50 text-brand-700 text-xs font-bold uppercase tracking-wider mb-3">
-                        {{ $course->code }}
-                    </span>
-                    <h3 class="font-bold text-xl text-brand-800 leading-tight">{{ $course->name }}</h3>
+                    <div class="mb-3 flex items-center justify-between">
+                        <span class="inline-block rounded-md bg-brand-50 px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-brand-700">
+                            {{ $course->code }}
+                        </span>
+                        <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-gold-400/20 text-gold-600" aria-hidden="true">
+                            <i data-lucide="book-open" class="w-4 h-4"></i>
+                        </span>
+                    </div>
+                    <h3 class="text-xl font-bold leading-tight text-brand-800 group-hover:text-gold-600">{{ $course->name }}</h3>
                 </div>
-                
+
                 <!-- Lecturer Info -->
-                <div class="flex items-center gap-2 mb-6 text-sm text-slate-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-brand-500"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                <div class="mb-6 flex items-center gap-2 text-base text-slate-600">
+                    <i data-lucide="user-round" class="w-4 h-4 text-brand-500"></i>
                     <span>{{ $course->lecturer ? $course->lecturer->name : 'Lecturer Not Assigned' }}</span>
                 </div>
-                
-                <!-- Actions (Pushed to the bottom) -->
-                <div class="mt-auto pt-4 border-t border-brand-50 flex items-center justify-between">
-                    <a href="{{ route('courses.show', $course->id) }}" class="text-brand-600 font-semibold text-sm hover:text-brand-800 transition">
-                        View Details &rarr;
+
+                <!-- Actions (pushed to the bottom) -->
+                <div class="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-brand-100 pt-4">
+                    <a href="{{ route('courses.show', $course->id) }}" class="inline-flex items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-800">
+                        View Details <i data-lucide="arrow-right" class="w-4 h-4 group-hover:translate-x-1 transition-transform"></i>
                     </a>
-                    
-                    @if(auth()->user()->role === 'Administrator')
+
+                    @can('manage courses')
                         <div class="flex items-center space-x-3">
-                            <a href="{{ route('courses.edit', $course->id) }}" class="text-gold-600 font-medium text-sm hover:text-gold-500 transition">
-                                Edit
-                            </a>
+                            <a href="{{ route('courses.edit', $course->id) }}" class="text-sm font-semibold text-gold-600 hover:text-brand-800">Edit</a>
                             <form action="{{ route('courses.destroy', $course->id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this course?');" class="inline">
-                                @csrf 
+                                @csrf
                                 @method('DELETE')
-                                <button type="submit" class="text-red-500 font-medium text-sm hover:text-red-700 transition">
-                                    Delete
-                                </button>
+                                <button type="submit" class="text-sm font-semibold text-red-600 hover:text-red-800">Delete</button>
                             </form>
                         </div>
-                    @endif
+                    @endcan
                 </div>
-            </div>
+            </article>
         @empty
             <!-- Empty State -->
-            <div class="col-span-full py-12 text-center bg-white rounded-xl border border-brand-100">
-                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto text-brand-300 mb-4"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-                <h3 class="text-lg font-bold text-brand-800 mb-1">No courses available</h3>
-                <p class="text-slate-500 text-sm">There are currently no courses in the system.</p>
+            <div class="surface-panel col-span-full py-12 text-center">
+                <span class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-50 text-brand-500" aria-hidden="true">
+                    <i data-lucide="book-open" class="w-7 h-7"></i>
+                </span>
+                <h3 class="mb-1 text-lg font-bold text-brand-800">No courses available</h3>
+                <p class="text-base text-slate-600">There are currently no courses to show.</p>
+                @can('manage courses')
+                    <a href="{{ route('courses.create') }}" class="btn-primary mt-5">Add the first course</a>
+                @endcan
             </div>
         @endforelse
-    </div>
+    </section>
 </div>
 @endsection

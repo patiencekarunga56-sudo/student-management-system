@@ -1,35 +1,55 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="flex justify-between items-center mb-6">
-    <h1 class="text-2xl font-bold">Manage Students</h1>
-    <a href="{{ route('students.create') }}" class="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700">+ Add Student</a>
-</div>
+<div class="page-shell">
+<header class="image-banner">
+    <div class="image-banner-copy">
+        <p class="text-sm font-bold uppercase tracking-wider text-amber-300">Student directory</p>
+        <h1>Manage Students</h1>
+        <p>Review student accounts and update their contact details.</p>
+        <a href="{{ route('students.create') }}" class="btn-secondary mt-5 border-white/50 bg-white/10 text-white hover:bg-white/20 hover:text-white">Add Student</a>
+    </div>
+    <div class="image-banner-media">
+        <img src="https://images.pexels.com/photos/267885/pexels-photo-267885.jpeg?auto=compress&cs=tinysrgb&w=1100" alt="Graduates gathered on campus" fetchpriority="high">
+    </div>
+</header>
 
-<div class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-    <table class="w-full text-left border-collapse">
-        <thead class="bg-gray-50 border-b">
+<div class="table-scroll">
+    <table class="data-table">
+        <caption class="sr-only">Student accounts</caption>
+        <thead>
             <tr>
-                <th class="p-4 font-medium text-gray-600">Name</th>
-                <th class="p-4 font-medium text-gray-600">Email</th>
-                <th class="p-4 font-medium text-gray-600">Actions</th>
+                <th scope="col">Name</th>
+                <th scope="col">Email</th>
+                <th scope="col">Actions</th>
             </tr>
         </thead>
         <tbody>
-            @foreach($students as $student)
-            <tr class="border-b last:border-0 hover:bg-gray-50">
-                <td class="p-4">{{ $student->name }}</td>
-                <td class="p-4 text-gray-500">{{ $student->email }}</td>
-                <td class="p-4 flex space-x-3">
-                    <a href="{{ route('students.edit', $student->id) }}" class="text-blue-600 hover:underline">Edit</a>
-                    <form action="{{ route('students.destroy', $student->id) }}" method="POST" onsubmit="return confirm('Delete student?');">
-                        @csrf @method('DELETE')
-                        <button type="submit" class="text-red-500 hover:underline">Delete</button>
-                    </form>
-                </td>
-            </tr>
-            @endforeach
+            @forelse($students as $student)
+                <tr>
+                    <td class="font-semibold text-coffee-800">{{ $student->name }}</td>
+                    <td>{{ $student->email }}</td>
+                    <td>
+                        <div class="flex items-center gap-4">
+                            <a href="{{ route('students.edit', $student->id) }}" class="font-semibold text-accent-600 hover:text-coffee-800 hover:underline">Edit</a>
+                            <form action="{{ route('students.destroy', $student->id) }}" method="POST" onsubmit="return confirm('Delete student?');">
+                                @csrf @method('DELETE')
+                                <button type="submit" class="font-semibold text-red-700 hover:text-red-900 hover:underline">Delete</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="3" class="py-12 text-center">
+                        <p class="font-semibold text-coffee-800">No student accounts found</p>
+                        <p class="mt-1 text-sm text-coffee-500">Add a student to start building the student directory.</p>
+                        <a href="{{ route('students.create') }}" class="btn-primary mt-4">Add Student</a>
+                    </td>
+                </tr>
+            @endforelse
         </tbody>
     </table>
+</div>
 </div>
 @endsection
