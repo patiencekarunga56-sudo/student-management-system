@@ -10,7 +10,7 @@ Repository: [https://github.com/patiencekarunga56-sudo/student-management-system
 
 ## Group Members
 
-| Name | Reg. No. | GitHub |
+| Name | Reg. No. | Responsibility | GitHub |
 |------|----------|----------------|--------|
 | Nakawooya Hajarah  |[24/U/0926]  | @[Nakawooyahajarah1-jpg ]|
 | [Karunga Patience] | 24/U/05333/PS | @[patiencekarunga56-sudo] |
