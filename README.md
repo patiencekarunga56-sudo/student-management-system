@@ -12,11 +12,12 @@ Repository: [https://github.com/patiencekarunga56-sudo/student-management-system
 
 | Name | Reg. No. | Responsibility | GitHub |
 |------|----------|----------------|--------|
-| Nakawooya Hajarah  [Surname] | [Reg No] | Database design and relationships (migrations, models, Eloquent relationships, foreign keys, duplicate-registration prevention) | @[username] |
-| [Name] | [Reg No] | [Responsibility] | @[username] |
-| [Name] | [Reg No] | [Responsibility] | @[username] |
-| [Name] | [Reg No] | [Responsibility] | @[username] |
-| [Name] | [Reg No] | [Responsibility] | @[username] |
+| Nakawooya Hajarah    | @[Nakawooyahajarah1-jpg ]|
+| [Karunga Patience] | [24/U/05333/PS] | @[patiencekarunga56-sudo] |
+| [Kitiibwa Merisha] | [24/U/06027/PS] | @[24/U/06027/PS] |
+| [Sebakeera Marvin] | [24/U/20005/EVE]  @[SBAKEERAMARVIN-coder] |
+| [Rwomushana Macathy] | [24/u/10956/ps]  | @[westboyboy373@gmail.com] |
+|[khalil ayyub kimera ] | [24/U/05733/PS]  | @[2400705733-sudo] 
 
 See `CONTRIBUTIONS.md` for branches, pull requests and individual contributions.
 
@@ -246,7 +247,7 @@ Assigned Task :
 •	Assist with database integration.
 
 Member:sabakeera Marvin
-Reg.No:24/U/20005
+Reg.No:24/U/20005/Eve
 GitHub Username ''
 Assigned Task :
 •	Design the MySQL database structure.
