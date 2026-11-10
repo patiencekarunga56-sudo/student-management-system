@@ -10,14 +10,14 @@ Repository: [https://github.com/patiencekarunga56-sudo/student-management-system
 
 ## Group Members
 
- Name | Reg.No. | GitHub |
+| Name | Reg. No. | Responsibility | GitHub |
 |------|----------|----------------|--------|
-| Nakawooya Hajarah  |24/U/0926  | Nakawooyahajarah1-jpg |
-| Karunga Patience| 24/U/05333/PS | patiencekarunga56-sudo|
-| Kitiibwa Merisha | 24/U/06027/PS| 24/U/06027/PS |
-| Sebakeera Marvin| 24/U/20005/EVE SBAKEERAMARVIN-coder|
-| Rwomushana Macathy| 24/u/10956/ps  | westboyboy373@gmail.com|
-|khalil ayyub kimera  | 24/U/05733/PS | 2400705733-sudo 
+| Nakawooya Hajarah  |[24/U/0926]  | @[Nakawooyahajarah1-jpg ]|
+| [Karunga Patience] | 24/U/05333/PS | @[patiencekarunga56-sudo] |
+| [Kitiibwa Merisha] | [24/U/06027/PS] | @[24/U/06027/PS] |
+| [Sebakeera Marvin] | [24/U/20005/EVE]  @[SBAKEERAMARVIN-coder] |
+| [Rwomushana Macathy] | [24/u/10956/ps]  | @[westboyboy373@gmail.com] |
+|[khalil ayyub kimera ] | [24/U/05733/PS]  | @[2400705733-sudo] 
 
 See `CONTRIBUTIONS.md` for branches, pull requests and individual contributions.
 
